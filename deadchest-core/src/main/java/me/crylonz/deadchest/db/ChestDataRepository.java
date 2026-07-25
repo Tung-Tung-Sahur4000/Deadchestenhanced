@@ -2,6 +2,7 @@ package me.crylonz.deadchest.db;
 
 import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import me.crylonz.deadchest.utils.ItemBytes;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -17,6 +18,65 @@ import static me.crylonz.deadchest.DeadChestLoader.db;
 import static me.crylonz.deadchest.DeadChestLoader.sqlExecutor;
 
 public class ChestDataRepository {
+
+    /**
+     * Maximum time the server thread waits for a write that must be on disk
+     * before the game state moves on.
+     */
+    private static final long DURABLE_WRITE_TIMEOUT_MS = 3000L;
+
+    private static final String INSERT_COLUMNS =
+            "player_uuid, player_name, chest_world, chest_x, chest_y, chest_z, chest_yaw, chest_pitch, " +
+                    "chest_date, is_infinity, is_removed_block, " +
+                    "holo_world, holo_x, holo_y, holo_z, holo_yaw, holo_pitch, " +
+                    "holographic_timer_id, holographic_status_id, holographic_owner_id, killer_uuid, world_name, xp_stored, inventory, " +
+                    "death_id, integrity_state, integrity_seq, integrity_owner";
+
+    private static final String INSERT_PLACEHOLDERS =
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+
+    private static final String UPDATE_ASSIGNMENTS =
+            "chest_date = ?, " +
+                    "is_infinity = ?, " +
+                    "is_removed_block = ?, " +
+                    "holo_world = ?, " +
+                    "holo_x = ?, " +
+                    "holo_y = ?, " +
+                    "holo_z = ?, " +
+                    "holo_yaw = ?, " +
+                    "holo_pitch = ?, " +
+                    "holographic_timer_id = ?, " +
+                    "holographic_status_id = ?, " +
+                    "holographic_owner_id = ?, " +
+                    "killer_uuid = ?, " +
+                    "world_name = ?, " +
+                    "xp_stored = ?, " +
+                    "inventory = ?, " +
+                    "death_id = ?, " +
+                    "integrity_state = ?, " +
+                    "integrity_seq = ?, " +
+                    "integrity_owner = ?";
+
+    /**
+     * Identifies the row of one precise chest, used by deletions.
+     * <p>
+     * The death id is the real identity: several chests can share a block over
+     * time, and a deletion keyed on the position alone used to remove whichever
+     * row matched first, dropping a chest that was still in use and leaving the
+     * looted one behind. The owner + position key is only kept for the rows
+     * written before death ids existed.
+     */
+    private static final String IDENTITY_PREDICATE =
+            "((death_id IS NOT NULL AND death_id = ?) " +
+                    "OR (death_id IS NULL AND player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?))";
+
+    /**
+     * Locates the row occupying a block for a player, used by the upsert paths:
+     * one player can only have one chest per block, so this is what tells an
+     * insert from an update.
+     */
+    private static final String SLOT_PREDICATE =
+            "player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?";
 
     public static void initTable(Runnable afterCreation) {
         sqlExecutor.runAsync(() -> {
@@ -47,12 +107,17 @@ public class ChestDataRepository {
                                 "killer_uuid TEXT," +
                                 "world_name TEXT NOT NULL," +
                                 "xp_stored INTEGER NOT NULL," +
-                                "inventory BLOB" +
+                                "inventory BLOB," +
+                                "death_id TEXT," +
+                                "integrity_state TEXT NOT NULL DEFAULT 'CONFIRMED'," +
+                                "integrity_seq BIGINT NOT NULL DEFAULT 0," +
+                                "integrity_owner TEXT" +
                                 ")"
                 );
                 st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_player ON chest_data(player_uuid)");
                 ckeckIfUpdated();
                 st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_location ON chest_data(chest_world, chest_x, chest_y, chest_z)");
+                st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_death_id ON chest_data(death_id)");
                 afterCreation.run();
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to create chest_data schema", e);
@@ -113,12 +178,7 @@ public class ChestDataRepository {
 
 
     public static void saveAll(Collection<ChestData> chests) {
-        String sql = "INSERT INTO chest_data (" +
-                "player_uuid, player_name, chest_world, chest_x, chest_y, chest_z, chest_yaw, chest_pitch, " +
-                "chest_date, is_infinity, is_removed_block, " +
-                "holo_world, holo_x, holo_y, holo_z, holo_yaw, holo_pitch, " +
-                "holographic_timer_id, holographic_status_id, holographic_owner_id, killer_uuid, world_name, xp_stored, inventory" +
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO chest_data (" + INSERT_COLUMNS + ") VALUES (" + INSERT_PLACEHOLDERS + ")";
 
         try (Connection conn = db.connection();
              Statement clear = conn.createStatement();
@@ -129,47 +189,7 @@ public class ChestDataRepository {
 
             // On batch tous les nouveaux coffres
             for (ChestData chest : chests) {
-                Location chestLoc = chest.getChestLocation();
-                Location holoLoc = chest.getHolographicTimer();
-
-                ps.setString(1, chest.getPlayerStringUUID());
-                ps.setString(2, chest.getPlayerName());
-
-                ps.setString(3, chestLoc.getWorld().getName());
-                ps.setInt(4, chestLoc.getBlockX());
-                ps.setInt(5, chestLoc.getBlockY());
-                ps.setInt(6, chestLoc.getBlockZ());
-                ps.setFloat(7, chestLoc.getYaw());
-                ps.setFloat(8, chestLoc.getPitch());
-
-                ps.setLong(9, chest.getChestDate().getTime());
-                ps.setBoolean(10, chest.isInfinity());
-                ps.setBoolean(11, chest.isRemovedBlock());
-
-                ps.setString(12, holoLoc.getWorld().getName());
-                ps.setInt(13, holoLoc.getBlockX());
-                ps.setInt(14, holoLoc.getBlockY());
-                ps.setInt(15, holoLoc.getBlockZ());
-                ps.setFloat(16, holoLoc.getYaw());
-                ps.setFloat(17, holoLoc.getPitch());
-
-                ps.setString(18, chest.getHolographicTimerId().toString());
-                if (chest.getHolographicStatusId() == null) {
-                    ps.setNull(19, Types.VARCHAR);
-                } else {
-                    ps.setString(19, chest.getHolographicStatusId().toString());
-                }
-                ps.setString(20, chest.getHolographicOwnerId().toString());
-                if (chest.getKillerUUID() == null) {
-                    ps.setNull(21, Types.VARCHAR);
-                } else {
-                    ps.setString(21, chest.getKillerUUID().toString());
-                }
-                ps.setString(22, chest.getWorldName());
-                ps.setInt(23, chest.getXpStored());
-                ps.setBytes(24, ItemBytes.toBytesList(chest.getInventory()));
-
-
+                bindInsert(ps, chest);
                 ps.addBatch();
             }
 
@@ -180,31 +200,9 @@ public class ChestDataRepository {
     }
 
     public static void batchSave(Collection<ChestData> chests) {
-        final String checkDuplicate = "SELECT 1 FROM chest_data WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ? LIMIT 1";
-        final String sqlInsert = "INSERT INTO chest_data (" +
-                "player_uuid, player_name, chest_world, chest_x, chest_y, chest_z, chest_yaw, chest_pitch, " +
-                "chest_date, is_infinity, is_removed_block, " +
-                "holo_world, holo_x, holo_y, holo_z, holo_yaw, holo_pitch, " +
-                "holographic_timer_id, holographic_status_id, holographic_owner_id, killer_uuid, world_name, xp_stored, inventory" +
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        final String sqlUpdate = "UPDATE chest_data SET " +
-                "chest_date = ?," +
-                " is_infinity = ?, " +
-                "is_removed_block = ?, " +
-                "holo_world = ?, " +
-                "holo_x = ?, " +
-                "holo_y = ?, " +
-                "holo_z = ?, " +
-                "holo_yaw = ?, " +
-                "holo_pitch = ?, " +
-                "holographic_timer_id = ?, " +
-                "holographic_status_id = ?, " +
-                "holographic_owner_id = ?, " +
-                "killer_uuid = ?, " +
-                "world_name = ?, " +
-                "xp_stored = ?, " +
-                "inventory = ? " +
-                "WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?";
+        final String checkDuplicate = "SELECT 1 FROM chest_data WHERE " + SLOT_PREDICATE + " LIMIT 1";
+        final String sqlInsert = "INSERT INTO chest_data (" + INSERT_COLUMNS + ") VALUES (" + INSERT_PLACEHOLDERS + ")";
+        final String sqlUpdate = "UPDATE chest_data SET " + UPDATE_ASSIGNMENTS + " WHERE " + SLOT_PREDICATE;
 
         try (Connection conn = db.connection()) {
             conn.setAutoCommit(false);
@@ -215,94 +213,20 @@ public class ChestDataRepository {
                 boolean hasInserts = false;
                 boolean hasUpdates = false;
                 for (ChestData chest : chests) {
-                    Location chestLoc = chest.getChestLocation();
-                    Location holoLoc = chest.getHolographicTimer();
-
                     // Check if row exists
-                    psCheck.setString(1, chest.getPlayerStringUUID());
-                    psCheck.setString(2, chestLoc.getWorld().getName());
-                    psCheck.setInt(3, chestLoc.getBlockX());
-                    psCheck.setInt(4, chestLoc.getBlockY());
-                    psCheck.setInt(5, chestLoc.getBlockZ());
+                    bindSlot(psCheck, 1, chest);
 
                     boolean exists;
                     try (ResultSet rs = psCheck.executeQuery()) {
                         exists = rs.next();
                     }
                     if (!exists) {
-                        int i = 1;
-                        psInsert.setString(i++, chest.getPlayerStringUUID());
-                        psInsert.setString(i++, chest.getPlayerName());
-
-                        psInsert.setString(i++, chestLoc.getWorld().getName());
-                        psInsert.setInt(i++, chestLoc.getBlockX());
-                        psInsert.setInt(i++, chestLoc.getBlockY());
-                        psInsert.setInt(i++, chestLoc.getBlockZ());
-                        psInsert.setFloat(i++, chestLoc.getYaw());
-                        psInsert.setFloat(i++, chestLoc.getPitch());
-
-                        psInsert.setLong(i++, chest.getChestDate().getTime());
-                        psInsert.setBoolean(i++, chest.isInfinity());
-                        psInsert.setBoolean(i++, chest.isRemovedBlock());
-
-                        psInsert.setString(i++, holoLoc.getWorld().getName());
-                        psInsert.setInt(i++, holoLoc.getBlockX());
-                        psInsert.setInt(i++, holoLoc.getBlockY());
-                        psInsert.setInt(i++, holoLoc.getBlockZ());
-                        psInsert.setFloat(i++, holoLoc.getYaw());
-                        psInsert.setFloat(i++, holoLoc.getPitch());
-
-                        psInsert.setString(i++, chest.getHolographicTimerId().toString());
-                        if (chest.getHolographicStatusId() == null) {
-                            psInsert.setNull(i++, Types.VARCHAR);
-                        } else {
-                            psInsert.setString(i++, chest.getHolographicStatusId().toString());
-                        }
-                        psInsert.setString(i++, chest.getHolographicOwnerId().toString());
-                        if (chest.getKillerUUID() == null) {
-                            psInsert.setNull(i++, Types.VARCHAR);
-                        } else {
-                            psInsert.setString(i++, chest.getKillerUUID().toString());
-                        }
-                        psInsert.setString(i++, chest.getWorldName());
-                        psInsert.setInt(i++, chest.getXpStored());
-                        psInsert.setBytes(i, ItemBytes.toBytesList(chest.getInventory()));
+                        bindInsert(psInsert, chest);
                         psInsert.addBatch();
                         hasInserts = true;
                     } else {
-                        int i = 1;
-                        psUpdate.setLong(i++, chest.getChestDate().getTime());
-                        psUpdate.setBoolean(i++, chest.isInfinity());
-                        psUpdate.setBoolean(i++, chest.isRemovedBlock());
-
-                        psUpdate.setString(i++, holoLoc.getWorld().getName());
-                        psUpdate.setInt(i++, holoLoc.getBlockX());
-                        psUpdate.setInt(i++, holoLoc.getBlockY());
-                        psUpdate.setInt(i++, holoLoc.getBlockZ());
-                        psUpdate.setFloat(i++, holoLoc.getYaw());
-                        psUpdate.setFloat(i++, holoLoc.getPitch());
-
-                        psUpdate.setString(i++, chest.getHolographicTimerId().toString());
-                        if (chest.getHolographicStatusId() == null) {
-                            psUpdate.setNull(i++, Types.VARCHAR);
-                        } else {
-                            psUpdate.setString(i++, chest.getHolographicStatusId().toString());
-                        }
-                        psUpdate.setString(i++, chest.getHolographicOwnerId().toString());
-                        if (chest.getKillerUUID() == null) {
-                            psUpdate.setNull(i++, Types.VARCHAR);
-                        } else {
-                            psUpdate.setString(i++, chest.getKillerUUID().toString());
-                        }
-                        psUpdate.setString(i++, chest.getWorldName());
-                        psUpdate.setInt(i++, chest.getXpStored());
-                        psUpdate.setBytes(i++, ItemBytes.toBytesList(chest.getInventory()));
-
-                        psUpdate.setString(i++, chest.getPlayerStringUUID());
-                        psUpdate.setString(i++, chestLoc.getWorld().getName());
-                        psUpdate.setInt(i++, chestLoc.getBlockX());
-                        psUpdate.setInt(i++, chestLoc.getBlockY());
-                        psUpdate.setInt(i++, chestLoc.getBlockZ());
+                        int i = bindUpdate(psUpdate, chest);
+                        bindSlot(psUpdate, i, chest);
                         psUpdate.addBatch();
                         hasUpdates = true;
                     }
@@ -322,43 +246,14 @@ public class ChestDataRepository {
     }
 
     public static boolean update(@Nonnull final ChestData chest) {
-        final String sqlUpdate = "UPDATE chest_data SET " +
-                "chest_date = ?, " +
-                "is_infinity = ?, " +
-                "is_removed_block = ?, " +
-                "holo_world = ?, " +
-                "holo_x = ?, " +
-                "holo_y = ?, " +
-                "holo_z = ?, " +
-                "holo_yaw = ?, " +
-                "holo_pitch = ?, " +
-                "holographic_timer_id = ?, " +
-                "holographic_status_id = ?, " +
-                "holographic_owner_id = ?, " +
-                "killer_uuid = ?, " +
-                "world_name = ?, " +
-                "xp_stored = ?, " +
-                "inventory = ? " +
-                "WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?";
-
-        final String checkDublicate = "SELECT player_uuid, " +
-                "chest_world, " +
-                "chest_x, " +
-                "chest_y, " +
-                "chest_z " +
-                "FROM chest_data WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ? LIMIT 1";
+        final String sqlUpdate = "UPDATE chest_data SET " + UPDATE_ASSIGNMENTS + " WHERE " + SLOT_PREDICATE;
+        final String checkDublicate = "SELECT 1 FROM chest_data WHERE " + SLOT_PREDICATE + " LIMIT 1";
 
         try (Connection conn = db.connection();
              PreparedStatement psDublicate = conn.prepareStatement(checkDublicate);
              PreparedStatement ps = conn.prepareStatement(sqlUpdate)) {
-            Location chestLoc = chest.getChestLocation();
-            Location holoLoc = chest.getHolographicTimer();
 
-            psDublicate.setString(1, chest.getPlayerStringUUID());
-            psDublicate.setString(2, chestLoc.getWorld().getName());
-            psDublicate.setInt(3, chestLoc.getBlockX());
-            psDublicate.setInt(4, chestLoc.getBlockY());
-            psDublicate.setInt(5, chestLoc.getBlockZ());
+            bindSlot(psDublicate, 1, chest);
             try (ResultSet rs = psDublicate.executeQuery()) {
                 if (!rs.next()) {
                     save(chest);
@@ -366,38 +261,8 @@ public class ChestDataRepository {
                 }
             }
 
-            ps.setLong(1, chest.getChestDate().getTime());
-            ps.setBoolean(2, chest.isInfinity());
-            ps.setBoolean(3, chest.isRemovedBlock());
-
-            ps.setString(4, holoLoc.getWorld().getName());
-            ps.setInt(5, holoLoc.getBlockX());
-            ps.setInt(6, holoLoc.getBlockY());
-            ps.setInt(7, holoLoc.getBlockZ());
-            ps.setFloat(8, holoLoc.getYaw());
-            ps.setFloat(9, holoLoc.getPitch());
-
-            ps.setString(10, chest.getHolographicTimerId().toString());
-            if (chest.getHolographicStatusId() == null) {
-                ps.setNull(11, Types.VARCHAR);
-            } else {
-                ps.setString(11, chest.getHolographicStatusId().toString());
-            }
-            ps.setString(12, chest.getHolographicOwnerId().toString());
-            if (chest.getKillerUUID() == null) {
-                ps.setNull(13, Types.VARCHAR);
-            } else {
-                ps.setString(13, chest.getKillerUUID().toString());
-            }
-            ps.setString(14, chest.getWorldName());
-            ps.setInt(15, chest.getXpStored());
-            ps.setBytes(16, ItemBytes.toBytesList(chest.getInventory()));
-
-            ps.setString(17, chest.getPlayerStringUUID());
-            ps.setString(18, chestLoc.getWorld().getName());
-            ps.setInt(19, chestLoc.getBlockX());
-            ps.setInt(20, chestLoc.getBlockY());
-            ps.setInt(21, chestLoc.getBlockZ());
+            int i = bindUpdate(ps, chest);
+            bindSlot(ps, i, chest);
 
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -408,71 +273,20 @@ public class ChestDataRepository {
 
 
     public static boolean save(@Nonnull final ChestData chest) {
-        final String sql = "INSERT INTO chest_data (" +
-                "player_uuid, player_name, chest_world, chest_x, chest_y, chest_z, chest_yaw, chest_pitch, " +
-                "chest_date, is_infinity, is_removed_block, " +
-                "holo_world, holo_x, holo_y, holo_z, holo_yaw, holo_pitch, " +
-                "holographic_timer_id, holographic_status_id, holographic_owner_id, killer_uuid, world_name, xp_stored, inventory" +
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        final String checkDublicate = "SELECT player_uuid, " +
-                "chest_world, " +
-                "chest_x, " +
-                "chest_y, " +
-                "chest_z " +
-                "FROM chest_data WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ? LIMIT 1";
+        final String sql = "INSERT INTO chest_data (" + INSERT_COLUMNS + ") VALUES (" + INSERT_PLACEHOLDERS + ")";
+        final String checkDublicate = "SELECT 1 FROM chest_data WHERE " + SLOT_PREDICATE + " LIMIT 1";
 
         try (Connection conn = db.connection();
              PreparedStatement psDublicate = conn.prepareStatement(checkDublicate);
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            Location chestLoc = chest.getChestLocation();
-            Location holoLoc = chest.getHolographicTimer();
 
-            psDublicate.setString(1, chest.getPlayerStringUUID());
-            psDublicate.setString(2, chestLoc.getWorld().getName());
-            psDublicate.setInt(3, chestLoc.getBlockX());
-            psDublicate.setInt(4, chestLoc.getBlockY());
-            psDublicate.setInt(5, chestLoc.getBlockZ());
+            bindSlot(psDublicate, 1, chest);
             try (ResultSet rs = psDublicate.executeQuery()) {
                 if (rs.next())
                     return true;
             }
 
-            ps.setString(1, chest.getPlayerStringUUID());
-            ps.setString(2, chest.getPlayerName());
-
-            ps.setString(3, chestLoc.getWorld().getName());
-            ps.setInt(4, chestLoc.getBlockX());
-            ps.setInt(5, chestLoc.getBlockY());
-            ps.setInt(6, chestLoc.getBlockZ());
-            ps.setFloat(7, chestLoc.getYaw());
-            ps.setFloat(8, chestLoc.getPitch());
-
-            ps.setLong(9, chest.getChestDate().getTime());
-            ps.setBoolean(10, chest.isInfinity());
-            ps.setBoolean(11, chest.isRemovedBlock());
-
-            ps.setString(12, holoLoc.getWorld().getName());
-            ps.setInt(13, holoLoc.getBlockX());
-            ps.setInt(14, holoLoc.getBlockY());
-            ps.setInt(15, holoLoc.getBlockZ());
-            ps.setFloat(16, holoLoc.getYaw());
-            ps.setFloat(17, holoLoc.getPitch());
-
-            ps.setString(18, chest.getHolographicTimerId().toString());
-            if (chest.getHolographicStatusId() == null) {
-                ps.setNull(19, Types.VARCHAR);
-            } else {
-                ps.setString(19, chest.getHolographicStatusId().toString());
-            }
-            ps.setString(20, chest.getHolographicOwnerId().toString());
-            if (chest.getKillerUUID() == null) {
-                ps.setNull(21, Types.VARCHAR);
-            } else {
-                ps.setString(21, chest.getKillerUUID().toString());
-            }
-            ps.setString(22, chest.getWorldName());
-            ps.setInt(23, chest.getXpStored());
-            ps.setBytes(24, ItemBytes.toBytesList(chest.getInventory()));
+            bindInsert(ps, chest);
 
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -482,18 +296,13 @@ public class ChestDataRepository {
     }
 
     public static void remove(@Nonnull final Collection<ChestData> chests) {
-        String sql = "DELETE FROM chest_data WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?";
+        String sql = "DELETE FROM chest_data WHERE " + IDENTITY_PREDICATE;
 
         try (Connection conn = db.connection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             boolean batchEmpty = true;
             for (ChestData chest : chests) {
-                Location chestLoc = chest.getChestLocation();
-                ps.setString(1, chest.getPlayerStringUUID());
-                ps.setString(2, chestLoc.getWorld().getName());
-                ps.setInt(3, chestLoc.getBlockX());
-                ps.setInt(4, chestLoc.getBlockY());
-                ps.setInt(5, chestLoc.getBlockZ());
+                bindIdentity(ps, 1, chest);
                 ps.addBatch();
                 batchEmpty = false;
             }
@@ -505,17 +314,12 @@ public class ChestDataRepository {
     }
 
     public static void remove(@Nonnull final ChestData chest) {
-        String sql = "DELETE FROM chest_data WHERE player_uuid = ? AND chest_world = ? AND chest_x = ? AND chest_y = ? AND chest_z = ?";
+        String sql = "DELETE FROM chest_data WHERE " + IDENTITY_PREDICATE;
 
         try (Connection conn = db.connection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            Location chestLoc = chest.getChestLocation();
-            ps.setString(1, chest.getPlayerStringUUID());
-            ps.setString(2, chestLoc.getWorld().getName());
-            ps.setInt(3, chestLoc.getBlockX());
-            ps.setInt(4, chestLoc.getBlockY());
-            ps.setInt(5, chestLoc.getBlockZ());
+            bindIdentity(ps, 1, chest);
 
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -566,7 +370,7 @@ public class ChestDataRepository {
                 rs.getFloat("holo_pitch")
         );
 
-        return new ChestData(
+        ChestData chestData = new ChestData(
                 ItemBytes.fromBytesList(rs.getBytes("inventory")),
                 chestLoc,
                 rs.getString("player_name"),
@@ -582,6 +386,227 @@ public class ChestDataRepository {
                 rs.getString("world_name"),
                 rs.getInt("xp_stored")
         );
+
+        String storedDeathId = rs.getString("death_id");
+        if (storedDeathId != null) {
+            chestData.setDeathId(toUuid(storedDeathId));
+        }
+        chestData.setIntegrityState(ChestIntegrityState.fromStorage(rs.getString("integrity_state")));
+        chestData.setIntegritySequence(rs.getLong("integrity_seq"));
+        chestData.setIntegrityOwner(toUuid(rs.getString("integrity_owner")));
+        return chestData;
+    }
+
+    // ---------------------------------------------------------------------
+    // Durable writes
+    //
+    // These run on the database thread and are waited for, so the caller knows
+    // the row reached the disk before the game state that depends on it changes
+    // (clearing an inventory, handing items over to a player).
+    // ---------------------------------------------------------------------
+
+    /**
+     * Inserts a chest and waits for the write to complete.
+     *
+     * @param chest chest to persist
+     * @return {@code true} when the row is durably stored
+     */
+    public static boolean saveDurable(@Nonnull final ChestData chest) {
+        final boolean[] alreadyPresent = new boolean[1];
+        boolean completed = sqlExecutor.runBlocking(() -> alreadyPresent[0] = save(chest), DURABLE_WRITE_TIMEOUT_MS);
+        return completed && !alreadyPresent[0];
+    }
+
+    /**
+     * Deletes a chest and waits for the write to complete.
+     *
+     * @param chest chest to delete
+     * @return {@code true} when the row is durably gone
+     */
+    public static boolean removeDurable(@Nonnull final ChestData chest) {
+        return sqlExecutor.runBlocking(() -> remove(chest), DURABLE_WRITE_TIMEOUT_MS);
+    }
+
+    /**
+     * Updates a chest and waits for the write to complete.
+     *
+     * @param chest chest to update
+     * @return {@code true} when the new content is durably stored
+     */
+    public static boolean updateDurable(@Nonnull final ChestData chest) {
+        return sqlExecutor.runBlocking(() -> update(chest), DURABLE_WRITE_TIMEOUT_MS);
+    }
+
+    /**
+     * Persists only the integrity columns and waits for the write to complete.
+     * Cheaper than {@link #update(ChestData)}: the inventory blob is untouched.
+     *
+     * @param chest chest whose integrity state changed
+     * @return {@code true} when the new state is durably stored
+     */
+    public static boolean saveIntegrityDurable(@Nonnull final ChestData chest) {
+        return sqlExecutor.runBlocking(() -> saveIntegrity(chest), DURABLE_WRITE_TIMEOUT_MS);
+    }
+
+    /**
+     * Queues an integrity-only update.
+     *
+     * @param chest chest whose integrity state changed
+     */
+    public static void saveIntegrityAsync(@Nonnull final ChestData chest) {
+        sqlExecutor.runAsync(() -> saveIntegrity(chest));
+    }
+
+    /**
+     * Writes the integrity columns of an already stored chest.
+     *
+     * @param chest chest whose integrity state changed
+     */
+    public static void saveIntegrity(@Nonnull final ChestData chest) {
+        final String sql = "UPDATE chest_data SET death_id = ?, integrity_state = ?, integrity_seq = ?, integrity_owner = ? " +
+                "WHERE " + IDENTITY_PREDICATE;
+
+        try (Connection conn = db.connection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            int i = bindIntegrity(ps, 1, chest);
+            bindIdentity(ps, i, chest);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Statement binding
+    // ---------------------------------------------------------------------
+
+    private static void bindInsert(PreparedStatement ps, ChestData chest) throws SQLException {
+        Location chestLoc = chest.getChestLocation();
+        Location holoLoc = chest.getHolographicTimer();
+
+        int i = 1;
+        ps.setString(i++, chest.getPlayerStringUUID());
+        ps.setString(i++, chest.getPlayerName());
+
+        ps.setString(i++, chestLoc.getWorld().getName());
+        ps.setInt(i++, chestLoc.getBlockX());
+        ps.setInt(i++, chestLoc.getBlockY());
+        ps.setInt(i++, chestLoc.getBlockZ());
+        ps.setFloat(i++, chestLoc.getYaw());
+        ps.setFloat(i++, chestLoc.getPitch());
+
+        ps.setLong(i++, chest.getChestDate().getTime());
+        ps.setBoolean(i++, chest.isInfinity());
+        ps.setBoolean(i++, chest.isRemovedBlock());
+
+        ps.setString(i++, holoLoc.getWorld().getName());
+        ps.setInt(i++, holoLoc.getBlockX());
+        ps.setInt(i++, holoLoc.getBlockY());
+        ps.setInt(i++, holoLoc.getBlockZ());
+        ps.setFloat(i++, holoLoc.getYaw());
+        ps.setFloat(i++, holoLoc.getPitch());
+
+        ps.setString(i++, chest.getHolographicTimerId().toString());
+        setNullableString(ps, i++, chest.getHolographicStatusId());
+        ps.setString(i++, chest.getHolographicOwnerId().toString());
+        setNullableString(ps, i++, chest.getKillerUUID());
+        ps.setString(i++, chest.getWorldName());
+        ps.setInt(i++, chest.getXpStored());
+        ps.setBytes(i++, ItemBytes.toBytesList(chest.getInventory()));
+
+        bindIntegrity(ps, i, chest);
+    }
+
+    /**
+     * Binds every mutable column of a chest.
+     *
+     * @return index of the first free placeholder
+     */
+    private static int bindUpdate(PreparedStatement ps, ChestData chest) throws SQLException {
+        Location holoLoc = chest.getHolographicTimer();
+
+        int i = 1;
+        ps.setLong(i++, chest.getChestDate().getTime());
+        ps.setBoolean(i++, chest.isInfinity());
+        ps.setBoolean(i++, chest.isRemovedBlock());
+
+        ps.setString(i++, holoLoc.getWorld().getName());
+        ps.setInt(i++, holoLoc.getBlockX());
+        ps.setInt(i++, holoLoc.getBlockY());
+        ps.setInt(i++, holoLoc.getBlockZ());
+        ps.setFloat(i++, holoLoc.getYaw());
+        ps.setFloat(i++, holoLoc.getPitch());
+
+        ps.setString(i++, chest.getHolographicTimerId().toString());
+        setNullableString(ps, i++, chest.getHolographicStatusId());
+        ps.setString(i++, chest.getHolographicOwnerId().toString());
+        setNullableString(ps, i++, chest.getKillerUUID());
+        ps.setString(i++, chest.getWorldName());
+        ps.setInt(i++, chest.getXpStored());
+        ps.setBytes(i++, ItemBytes.toBytesList(chest.getInventory()));
+
+        return bindIntegrity(ps, i, chest);
+    }
+
+    private static int bindIntegrity(PreparedStatement ps, int index, ChestData chest) throws SQLException {
+        int i = index;
+        setNullableString(ps, i++, chest.getDeathId());
+        ps.setString(i++, chest.getIntegrityState().name());
+        ps.setLong(i++, chest.getIntegritySequence());
+        setNullableString(ps, i++, chest.getIntegrityOwner());
+        return i;
+    }
+
+    /**
+     * Binds the {@link #IDENTITY_PREDICATE} parameters.
+     *
+     * @return index of the first free placeholder
+     */
+    private static int bindIdentity(PreparedStatement ps, int index, ChestData chest) throws SQLException {
+        Location chestLoc = chest.getChestLocation();
+        int i = index;
+        setNullableString(ps, i++, chest.getDeathId());
+        ps.setString(i++, chest.getPlayerStringUUID());
+        ps.setString(i++, chestLoc.getWorld().getName());
+        ps.setInt(i++, chestLoc.getBlockX());
+        ps.setInt(i++, chestLoc.getBlockY());
+        ps.setInt(i++, chestLoc.getBlockZ());
+        return i;
+    }
+
+    /**
+     * Binds the {@link #SLOT_PREDICATE} parameters.
+     *
+     * @return index of the first free placeholder
+     */
+    private static int bindSlot(PreparedStatement ps, int index, ChestData chest) throws SQLException {
+        Location chestLoc = chest.getChestLocation();
+        int i = index;
+        ps.setString(i++, chest.getPlayerStringUUID());
+        ps.setString(i++, chestLoc.getWorld().getName());
+        ps.setInt(i++, chestLoc.getBlockX());
+        ps.setInt(i++, chestLoc.getBlockY());
+        ps.setInt(i++, chestLoc.getBlockZ());
+        return i;
+    }
+
+    private static void setNullableString(PreparedStatement ps, int index, UUID value) throws SQLException {
+        if (value == null) {
+            ps.setNull(index, Types.VARCHAR);
+        } else {
+            ps.setString(index, value.toString());
+        }
+    }
+
+    private static UUID toUuid(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static void ckeckIfUpdated() {
@@ -624,6 +649,21 @@ public class ChestDataRepository {
             }
             if (!tableColumns.contains("holographic_status_id")) {
                 st.executeUpdate("ALTER TABLE chest_data ADD COLUMN holographic_status_id TEXT");
+            }
+            if (!tableColumns.contains("death_id")) {
+                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN death_id TEXT");
+            }
+            if (!tableColumns.contains("integrity_state")) {
+                // Chests written before the crash-consistency handshake existed are
+                // adopted as confirmed: their death is long persisted on the player
+                // side, and voiding them on upgrade would delete legitimate loot.
+                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_state TEXT NOT NULL DEFAULT 'CONFIRMED'");
+            }
+            if (!tableColumns.contains("integrity_seq")) {
+                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_seq BIGINT NOT NULL DEFAULT 0");
+            }
+            if (!tableColumns.contains("integrity_owner")) {
+                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_owner TEXT");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);

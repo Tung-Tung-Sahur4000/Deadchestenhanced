@@ -8,7 +8,9 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.FileManager;
 import me.crylonz.deadchest.Localization;
+import me.crylonz.deadchest.TestDatabase;
 import me.crylonz.deadchest.db.InMemoryChestStore;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.Material;
@@ -54,6 +56,10 @@ class ClickListenerTest {
         deadChest = DeadChestLoader.getChestDataCache();
         deadChest.setChestData(new ArrayList<>());
 
+        DeadChestLoader.plugin = MockBukkit.createMockPlugin();
+        DeadChestLoader.log = java.util.logging.Logger.getLogger("ClickListenerTest");
+        TestDatabase.start(DeadChestLoader.plugin);
+
         DeadChestLoader.local = mock(Localization.class);
         DeadChestLoader.fileManager = mock(FileManager.class);
         when(DeadChestLoader.local.prefixed("chest.not-owner")).thenReturn("[DC] You are not the owner");
@@ -65,12 +71,26 @@ class ClickListenerTest {
 
     @AfterEach
     void tearDown() {
+        TestDatabase.stop();
         MockBukkit.unmock();
+    }
+
+    /**
+     * Chest mock already reconciled with the player data, which is the state of
+     * every chest a player can interact with.
+     */
+    private ChestData mockChest() {
+        ChestData chestData = mock(ChestData.class);
+        when(chestData.isSettled()).thenReturn(true);
+        when(chestData.beginTransfer()).thenReturn(true);
+        when(chestData.getIntegrityState()).thenReturn(ChestIntegrityState.CONFIRMED);
+        when(chestData.getDeathId()).thenReturn(UUID.randomUUID());
+        return chestData;
     }
 
     @Test
     void testIsNearGraveChest_CancelsEvent() {
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         deadChest.addChestData(cd);
 
@@ -86,7 +106,7 @@ class ClickListenerTest {
         // Config requires ownership
         when(DeadChestLoader.config.getBoolean(ConfigKey.ONLY_OWNER_CAN_OPEN_CHEST)).thenReturn(true);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(UUID.randomUUID());
         deadChest.addChestData(cd);
@@ -106,7 +126,7 @@ class ClickListenerTest {
         when(DeadChestLoader.config.getBoolean(ConfigKey.REQUIRE_PERMISSION_TO_GET_CHEST)).thenReturn(false);
         when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(1);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(player.getUniqueId());
         when(cd.getInventory()).thenReturn(Arrays.asList(new ItemStack(Material.DIAMOND), new ItemStack(Material.APPLE)));
@@ -130,7 +150,7 @@ class ClickListenerTest {
         when(DeadChestLoader.config.getBoolean(ConfigKey.ONLY_OWNER_CAN_OPEN_CHEST)).thenReturn(false);
         when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(2);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getInventory()).thenReturn(List.of(new ItemStack(Material.EMERALD)));
         when(cd.getXpStored()).thenReturn(10);
@@ -146,11 +166,55 @@ class ClickListenerTest {
     }
 
     @Test
+    void testClickOnDeadChest_UnreconciledChestStaysClosed() {
+        when(DeadChestLoader.config.getBoolean(ConfigKey.ONLY_OWNER_CAN_OPEN_CHEST)).thenReturn(false);
+        when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(1);
+        when(DeadChestLoader.local.prefixed("chest.not-reconciled")).thenReturn("[DC] Checking after a crash");
+
+        ChestData cd = mockChest();
+        when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
+        when(cd.isSettled()).thenReturn(false);
+        when(cd.getInventory()).thenReturn(List.of(new ItemStack(Material.DIAMOND)));
+        deadChest.addChestData(cd);
+
+        PlayerInteractEvent event = new PlayerInteractEvent(player, Action.LEFT_CLICK_BLOCK,
+                new ItemStack(Material.CHEST), chestBlock, BlockFace.UP);
+
+        listener.onClick(event);
+
+        assertTrue(event.isCancelled(), "A chest awaiting reconciliation must not open");
+        assertEquals("[DC] Checking after a crash", player.nextMessage());
+        assertEquals(Material.CHEST, chestBlock.getType(), "The chest must stay in place");
+        assertTrue(player.getInventory().isEmpty(), "No item may be handed over before reconciliation");
+    }
+
+    @Test
+    void testClickOnDeadChest_ContentIsHandedOverOnlyOnce() {
+        when(DeadChestLoader.config.getBoolean(ConfigKey.ONLY_OWNER_CAN_OPEN_CHEST)).thenReturn(false);
+        when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(1);
+
+        ChestData cd = mockChest();
+        when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
+        // Another interaction already took the hand over.
+        when(cd.beginTransfer()).thenReturn(false);
+        when(cd.getInventory()).thenReturn(List.of(new ItemStack(Material.DIAMOND)));
+        deadChest.addChestData(cd);
+
+        PlayerInteractEvent event = new PlayerInteractEvent(player, Action.LEFT_CLICK_BLOCK,
+                new ItemStack(Material.CHEST), chestBlock, BlockFace.UP);
+
+        listener.onClick(event);
+
+        assertTrue(event.isCancelled());
+        assertTrue(player.getInventory().isEmpty(), "The same content must never be given twice");
+    }
+
+    @Test
     void testHasGetPermission_Denied() {
         when(DeadChestLoader.config.getBoolean(ConfigKey.REQUIRE_PERMISSION_TO_GET_CHEST)).thenReturn(true);
         when(DeadChestLoader.config.getBoolean(ConfigKey.ONLY_OWNER_CAN_OPEN_CHEST)).thenReturn(false);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(player.getUniqueId());
         deadChest.addChestData(cd);
@@ -174,7 +238,7 @@ class ClickListenerTest {
         when(DeadChestLoader.config.getInt(ConfigKey.LOOT_PUBLIC_DURATION)).thenReturn(30);
         when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(1);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(UUID.randomUUID());
         when(cd.getChestDate()).thenReturn(new Date(System.currentTimeMillis() - 10_000L));
@@ -205,7 +269,7 @@ class ClickListenerTest {
         when(DeadChestLoader.config.getInt(ConfigKey.LOOT_PUBLIC_DURATION)).thenReturn(30);
         when(DeadChestLoader.config.getInt(ConfigKey.DROP_MODE)).thenReturn(1);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(UUID.randomUUID());
         when(cd.getKillerUUID()).thenReturn(killer.getUniqueId());
@@ -233,7 +297,7 @@ class ClickListenerTest {
         when(DeadChestLoader.config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(DeadChestLoader.config.getInt(ConfigKey.LOOT_PUBLIC_DURATION)).thenReturn(30);
 
-        ChestData cd = mock(ChestData.class);
+        ChestData cd = mockChest();
         when(cd.getChestLocation()).thenReturn(chestBlock.getLocation());
         when(cd.getPlayerUUID()).thenReturn(UUID.randomUUID());
         when(cd.getKillerUUID()).thenReturn(UUID.randomUUID());

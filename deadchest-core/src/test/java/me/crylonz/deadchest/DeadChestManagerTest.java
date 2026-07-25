@@ -8,6 +8,7 @@ import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.db.IgnoreItemListRepository;
 import me.crylonz.deadchest.db.SQLExecutor;
 import me.crylonz.deadchest.db.SQLite;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import me.crylonz.deadchest.utils.ExpiredActionType;
@@ -109,8 +110,8 @@ class DeadChestManagerTest {
             PlayerMock steve = server.addPlayer("Steve");
             Location locA = new Location(world, 20, 64, 20);
             Location locB = new Location(world, 21, 64, 21);
-            ChestData chestA = mock(ChestData.class);
-            ChestData chestB = mock(ChestData.class);
+            ChestData chestA = mockChest();
+            ChestData chestB = mockChest();
             when(chestA.getPlayerUUID()).thenReturn(steve.getUniqueId());
             when(chestB.getPlayerUUID()).thenReturn(steve.getUniqueId());
             when(chestA.getPlayerStringUUID()).thenReturn(steve.getUniqueId().toString());
@@ -138,7 +139,7 @@ class DeadChestManagerTest {
 
     @Test
     void handleExpirateDeadChestNotExpiredReturnsNotExpired() {
-        ChestData chest = mock(ChestData.class);
+        ChestData chest = mockChest();
         Date now = new Date(2_000_000L);
         when(chest.getChestDate()).thenReturn(new Date(now.getTime() - 10_000));
         when(chest.isInfinity()).thenReturn(false);
@@ -155,7 +156,7 @@ class DeadChestManagerTest {
         Location loc = new Location(realWorld, 30, 64, 30);
         realWorld.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chest = mock(ChestData.class);
+        ChestData chest = mockChest();
         Date now = new Date(2_000_000L);
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.ITEMS_DROPPED_AFTER_TIMEOUT)).thenReturn(false);
@@ -177,7 +178,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 31, 64, 31);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chest = mock(ChestData.class);
+        ChestData chest = mockChest();
         Date now = new Date(2_000_000L);
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.ITEMS_DROPPED_AFTER_TIMEOUT)).thenReturn(false);
@@ -198,7 +199,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 31, 64, 40);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chest = mock(ChestData.class);
+        ChestData chest = mockChest();
         Date now = new Date(2_000_000L);
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
@@ -222,7 +223,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 32, 64, 32);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chest = mock(ChestData.class);
+        ChestData chest = mockChest();
         when(chest.getChestLocation()).thenReturn(loc);
         when(chest.getChestDate()).thenReturn(new Date(System.currentTimeMillis() - 10_000L));
         when(chest.isInfinity()).thenReturn(false);
@@ -277,7 +278,7 @@ class DeadChestManagerTest {
         when(owner.getUniqueId()).thenReturn(ownerId);
         when(timer.getUniqueId()).thenReturn(timerId);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         Location chestLoc = new Location(mockedWorld, 40, 64, 40);
         Location holoLoc = new Location(mockedWorld, 40, 65, 40);
         when(chestData.getChestLocation()).thenReturn(chestLoc);
@@ -300,7 +301,7 @@ class DeadChestManagerTest {
         Location chestLoc = new Location(chestWorld, 10, 64, -25);
         Location holoLoc = new Location(hologramWorld, 11, 46.8, -25);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getChestLocation()).thenReturn(chestLoc);
         when(chestData.getHolographicTimer()).thenReturn(holoLoc);
         when(chestData.isChunkLoaded()).thenReturn(true);
@@ -324,7 +325,7 @@ class DeadChestManagerTest {
 
     @Test
     void replaceDeadChestIfItDisappearsReturnsFalseWhenWorldIsNull() {
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getChestLocation()).thenReturn(new Location(null, 1, 64, 1));
 
         assertFalse(DeadChestManager.replaceDeadChestIfItDisappears(chestData));
@@ -340,7 +341,7 @@ class DeadChestManagerTest {
         Location chestLoc = new Location(mockedWorld, 50, 64, 50);
         Location holoLoc = new Location(mockedWorld, 50, 65, 50);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getChestLocation()).thenReturn(chestLoc);
         when(chestData.getHolographicTimer()).thenReturn(holoLoc);
         when(chestData.getHolographicOwnerId()).thenReturn(ownerId);
@@ -365,7 +366,7 @@ class DeadChestManagerTest {
         Entity timerStand = mock(Entity.class);
         Location holoLoc = new Location(mockedWorld, 60, 65, 60);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getHolographicTimer()).thenReturn(holoLoc);
         when(chestData.isChunkLoaded()).thenReturn(true);
         when(chestData.getChestDate()).thenReturn(new Date(System.currentTimeMillis() - 1_000));
@@ -387,7 +388,7 @@ class DeadChestManagerTest {
         Entity timerStand = mock(Entity.class);
         Location holoLoc = new Location(mockedWorld, 61, 65, 61);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getHolographicTimer()).thenReturn(holoLoc);
         when(chestData.isChunkLoaded()).thenReturn(true);
         when(chestData.getChestDate()).thenReturn(new Date(System.currentTimeMillis() - 1_000));
@@ -424,7 +425,7 @@ class DeadChestManagerTest {
         Entity ownerStand = mock(Entity.class);
         Location holoLoc = new Location(mockedWorld, 70, 65, 70);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.getChestLocation()).thenReturn(new Location(mockedWorld, 70, 64, 70));
         when(chestData.getHolographicTimer()).thenReturn(holoLoc);
         when(chestData.isChunkLoaded()).thenReturn(true);
@@ -487,7 +488,7 @@ class DeadChestManagerTest {
                 "hologram.state.share", "SHARE"
         )));
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.isInfinity()).thenReturn(false);
         when(chestData.getChestDate()).thenReturn(new Date(0L));
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
@@ -512,7 +513,7 @@ class DeadChestManagerTest {
                 "hologram.state.share", "SHARE"
         )));
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.isInfinity()).thenReturn(false);
         when(chestData.getChestDate()).thenReturn(new Date(0L));
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
@@ -537,7 +538,7 @@ class DeadChestManagerTest {
                 "hologram.state.share", "SHARE"
         )));
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.isInfinity()).thenReturn(false);
         when(chestData.getChestDate()).thenReturn(new Date(0L));
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
@@ -562,7 +563,7 @@ class DeadChestManagerTest {
                 "hologram.state.share", "SHARE"
         )));
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(chestData.isInfinity()).thenReturn(false);
         when(chestData.getChestDate()).thenReturn(new Date(0L));
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
@@ -580,7 +581,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 62, 64, 62);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.ITEMS_DROPPED_AFTER_TIMEOUT)).thenReturn(false);
         when(chestData.getChestLocation()).thenReturn(loc);
@@ -607,7 +608,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 63, 64, 63);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
         when(config.getInt(ConfigKey.LOOT_PUBLIC_DURATION)).thenReturn(30);
@@ -633,7 +634,7 @@ class DeadChestManagerTest {
         Location loc = new Location(world, 64, 64, 64);
         world.getBlockAt(loc).setType(Material.CHEST);
 
-        ChestData chestData = mock(ChestData.class);
+        ChestData chestData = mockChest();
         when(config.getInt(ConfigKey.DEADCHEST_DURATION)).thenReturn(1);
         when(config.getBoolean(ConfigKey.LOOT_ENABLED)).thenReturn(true);
         when(config.getInt(ConfigKey.LOOT_PUBLIC_DURATION)).thenReturn(5);
@@ -654,6 +655,19 @@ class DeadChestManagerTest {
 
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty());
         assertEquals(Material.AIR, world.getBlockAt(loc).getType());
+    }
+
+    /**
+     * Chest mock already reconciled with the player data, which is the state of
+     * every chest the maintenance task is allowed to act on.
+     */
+    private ChestData mockChest() {
+        ChestData chestData = mock(ChestData.class);
+        when(chestData.isSettled()).thenReturn(true);
+        when(chestData.beginTransfer()).thenReturn(true);
+        when(chestData.getIntegrityState()).thenReturn(ChestIntegrityState.CONFIRMED);
+        when(chestData.getDeathId()).thenReturn(UUID.randomUUID());
+        return chestData;
     }
 
     private ChestData chestDataAt(int x, String playerName, UUID playerId, boolean infinity) {

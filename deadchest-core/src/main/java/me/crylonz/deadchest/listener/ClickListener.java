@@ -4,6 +4,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.DeadchestPickUpEvent;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.*;
 import org.bukkit.block.Block;
@@ -133,15 +134,38 @@ public class ClickListener implements Listener {
             return;
         }
 
-        DeadchestPickUpEvent deadchestPickUpEvent = new DeadchestPickUpEvent(cd);
-        Bukkit.getServer().getPluginManager().callEvent(deadchestPickUpEvent);
+        // A chest waiting for a crash reconciliation may hold items the player
+        // already owns, or items nobody owns yet. It stays closed until its owner
+        // reconnects and the plugin knows which of the two it is.
+        if (!cd.isSettled()) {
+            e.setCancelled(true);
+            player.sendMessage(local.prefixed("chest.not-reconciled"));
+            return;
+        }
 
-        if (deadchestPickUpEvent.isCancelled()) {
+        // Single winner: a second click, a second looter during the public phase
+        // or the expiration task can no longer empty the same chest twice.
+        if (!cd.beginTransfer()) {
             e.setCancelled(true);
             return;
         }
 
-        restoreOrDropInventory(cd, player, block);
+        DeadchestPickUpEvent deadchestPickUpEvent = new DeadchestPickUpEvent(cd);
+        Bukkit.getServer().getPluginManager().callEvent(deadchestPickUpEvent);
+
+        if (deadchestPickUpEvent.isCancelled()) {
+            cd.abortTransfer();
+            e.setCancelled(true);
+            return;
+        }
+
+        if (!restoreOrDropInventory(cd, player, block)) {
+            cd.abortTransfer();
+            e.setCancelled(true);
+            player.sendMessage(local.prefixed("chest.not-reconciled"));
+            return;
+        }
+
         cleanupChest(cd, block, player);
     }
 
@@ -159,14 +183,29 @@ public class ClickListener implements Listener {
     }
 
     /**
-     * Restore inventory or drop items depending on the mode
+     * Restore inventory or drop items depending on the mode.
+     * <p>
+     * The storage is always updated before the items exist anywhere else, so a
+     * crash in the middle of the hand over can never leave the same items in the
+     * chest and on the player at the same time.
+     *
+     * @return {@code false} when the storage refused the hand over, in which case
+     * nothing was given and the chest must stay intact
      */
-    private void restoreOrDropInventory(ChestData cd, Player player, Block block) {
+    private boolean restoreOrDropInventory(ChestData cd, Player player, Block block) {
         if (config.getInt(ConfigKey.DROP_MODE) == 1) {
+            if (!ChestIntegrityService.stageClaim(player, cd)) {
+                return false;
+            }
             restoreInventory(cd, player, block.getWorld());
-        } else {
-            dropInventory(cd, block);
+            return true;
         }
+
+        if (!ChestIntegrityService.releaseToWorld(cd)) {
+            return false;
+        }
+        dropInventory(cd, block);
+        return true;
     }
 
     /**
@@ -219,11 +258,24 @@ public class ClickListener implements Listener {
     }
 
     /**
-     * Removes chest after recovery
+     * Removes chest after recovery.
+     * <p>
+     * When the content went to the player inventory the row is not deleted here:
+     * it stays marked as claimed until the player data holding those items has
+     * been written, and {@link ChestIntegrityService#flushAndSettle(Player)}
+     * deletes it once that is done. If the server dies in between, the chest
+     * comes back instead of the items being lost.
      */
     private void cleanupChest(ChestData cd, Block block, Player player) {
         block.setType(Material.AIR);
-        DeadChestLoader.getChestDataCache().removeChestData(cd);
+        cd.removeArmorStand();
+
+        if (config.getInt(ConfigKey.DROP_MODE) == 1) {
+            ChestIntegrityService.flushAndSettle(player);
+        } else {
+            DeadChestLoader.getChestDataCache().removeChestData(cd);
+        }
+
         playPickupAnimation(block);
         playPickupSound(block, player);
     }

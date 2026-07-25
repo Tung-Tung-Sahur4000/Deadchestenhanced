@@ -112,6 +112,37 @@ maintenance:
   # false = keep existing chests
   cleanup-on-startup: false
 
+integrity:
+  # Protection against item duplication caused by a server crash.
+  #
+  # The plugin database is written the moment a player dies, while the vanilla
+  # playerdata file is only written on autosave, on quit or on a clean shutdown.
+  # When the server is killed without shutting down (out of memory kill, kill -9,
+  # host crash), the deadchest survives while the player file rolls back to
+  # before the death: the player logs back in with the items still in the
+  # inventory AND finds a deadchest holding the same items.
+  #
+  # When enabled, each transfer between a player and a deadchest is stamped on
+  # both sides and only completed once the player data reached the disk. A
+  # transfer that a crash left half done is settled when the player reconnects.
+  #
+  # true  = detect and cancel crash duplicates (recommended)
+  # false = legacy behavior, no crash protection
+  crash-protection: true
+
+  # Write the player data to disk as soon as items move between a player and a
+  # deadchest, instead of waiting for the next autosave.
+  # This is what closes the duplication window instead of only detecting it.
+  # true  = save the player right after death, claim and quit (recommended)
+  # false = only detect duplicates, without forcing a save
+  flush-player-data: true
+
+  # What to do with a deadchest proven to be a crash duplicate, meaning the
+  # player reconnected with the items the chest holds still in the inventory.
+  # void = delete the duplicated chest (recommended)
+  # keep = keep the chest and only log a warning, for manual review
+  on-rollback: void
+
 generation:
   # Allow generation in Creative mode.
   # false = no DeadChest if the player dies in Creative

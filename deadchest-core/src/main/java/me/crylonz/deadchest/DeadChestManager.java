@@ -1,5 +1,6 @@
 package me.crylonz.deadchest;
 
+import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.db.InMemoryChestStore;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.EffectAnimationStyle;
@@ -170,13 +171,23 @@ public class DeadChestManager {
                     chestData.setRemovedBlock(true);
                     loc.getWorld().getBlockAt(loc).setType(Material.AIR);
                 }
-                if (dropItemsAfterTimeout) {
-                    for (ItemStack itemStack : chestData.getInventory()) {
+                if (dropItemsAfterTimeout && chestData.beginTransfer()) {
+                    // Clear the stored content first: dropping the items while the
+                    // database still holds them means a crash brings the chest back
+                    // with a copy of everything now lying on the ground.
+                    final List<ItemStack> expiredContent = chestData.getInventory();
+                    chestData.cleanInventory();
+                    if (!ChestDataRepository.updateDurable(chestData)) {
+                        chestData.setInventory(expiredContent);
+                        chestData.abortTransfer();
+                        return ExpiredActionType.NOT_EXPIRED;
+                    }
+
+                    for (ItemStack itemStack : expiredContent) {
                         if (itemStack != null) {
                             loc.getWorld().dropItemNaturally(loc, itemStack);
                         }
                     }
-                    chestData.cleanInventory();
                 }
             }
             if (chestData.removeArmorStand()) {
@@ -389,6 +400,13 @@ public class DeadChestManager {
 
     public static void handleChestTick(ChestData chestData, Date now) {
         if (chestData == null) {
+            return;
+        }
+
+        // A chest waiting for a crash reconciliation is frozen: expiring it,
+        // dropping its content or rebuilding its block would act on items whose
+        // owner is not decided yet.
+        if (!chestData.isSettled()) {
             return;
         }
 

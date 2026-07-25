@@ -56,7 +56,10 @@ public enum ConfigKey {
     PICKUP_SOUND_NAME("visuals.sound.pickup.name"),
     PICKUP_SOUND_VOLUME("visuals.sound.pickup.volume"),
     PICKUP_SOUND_PITCH("visuals.sound.pickup.pitch"),
-    LOCALIZATION_LANGUAGE("localization.language", "language");
+    LOCALIZATION_LANGUAGE("localization.language", "language"),
+    INTEGRITY_PROTECTION_ENABLED("integrity.crash-protection"),
+    INTEGRITY_FLUSH_PLAYER_DATA("integrity.flush-player-data"),
+    INTEGRITY_ON_ROLLBACK("integrity.on-rollback");
 
     private static final Map<String, ConfigKey> BY_CANONICAL = new HashMap<>();
 

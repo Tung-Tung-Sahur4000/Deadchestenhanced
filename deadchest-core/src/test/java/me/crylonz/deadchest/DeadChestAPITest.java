@@ -32,6 +32,8 @@ public class DeadChestAPITest {
         plugin = MockBukkit.createMockPlugin();
 
         DeadChestLoader.plugin = plugin;
+        DeadChestLoader.log = java.util.logging.Logger.getLogger("DeadChestAPITest");
+        TestDatabase.start(plugin);
         DeadChestLoader.getChestDataCache().setChestData(new ArrayList<>());
         DeadChestLoader.graveBlocks.clear();
         DeadChestLoader.graveBlocks.add(Material.CHEST);
@@ -40,6 +42,7 @@ public class DeadChestAPITest {
     @AfterEach
     public void tearDown() {
         DeadChestLoader.getChestDataCache().setChestData(new ArrayList<>());
+        TestDatabase.stop();
         MockBukkit.unmock();
     }
 

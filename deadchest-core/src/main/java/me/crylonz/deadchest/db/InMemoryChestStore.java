@@ -1,6 +1,7 @@
 package me.crylonz.deadchest.db;
 
 import me.crylonz.deadchest.ChestData;
+import me.crylonz.deadchest.DeadChestLoader;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -33,9 +34,38 @@ public class InMemoryChestStore {
      * @param chestData chest data to add
      */
     public void addChestData(final ChestData chestData) {
+        final Location key = normalizeLocation(chestData.getChestLocation());
+        evictChestAlreadyAt(key, chestData);
         addPlayerData(chestData);
-        chestDataMap.put(normalizeLocation(chestData.getChestLocation()), chestData);
+        chestDataMap.put(key, chestData);
+    }
 
+    /**
+     * Drops a chest that occupied the same block as an incoming one.
+     * <p>
+     * The runtime index is keyed by position, so a second chest on the same block
+     * silently hides the first one: its row then survives in the database with
+     * nothing pointing at it, comes back on the next restart, and a deletion by
+     * position removes whichever row matches first. Keeping a single chest per
+     * block keeps the two views consistent.
+     *
+     * @param key      normalized block position
+     * @param incoming chest taking the position
+     */
+    private void evictChestAlreadyAt(final Location key, final ChestData incoming) {
+        final ChestData previous = chestDataMap.get(key);
+        if (previous == null || previous == incoming) {
+            return;
+        }
+        if (previous.getDeathId() != null && previous.getDeathId().equals(incoming.getDeathId())) {
+            return;
+        }
+
+        removePlayerData(previous);
+        ChestDataRepository.removeAsync(previous);
+        DeadChestLoader.log.warning("[DeadChest] Two deadchests shared the block "
+                + key.getBlockX() + " " + key.getBlockY() + " " + key.getBlockZ()
+                + " : the older one of [" + previous.getPlayerName() + "] was dropped to keep storage consistent.");
     }
 
     /**

@@ -1,6 +1,7 @@
 package me.crylonz.deadchest;
 
 import me.crylonz.deadchest.db.InMemoryChestStore;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -40,15 +41,25 @@ public class DeadChestAPI {
             return giveBackChestAsync(player, chest).join();
         }
 
-        if (player.isOnline()) {
-            for (ItemStack itemStack : chest.getInventory()) {
-                if (itemStack != null) {
-                    player.getWorld().dropItemNaturally(player.getLocation(), itemStack);
-                }
-            }
-            return removeChest(chest);
+        if (player == null || chest == null || !player.isOnline()) {
+            return false;
         }
-        return false;
+
+        final ChestData liveChest = resolveLiveChest(chest);
+        if (liveChest == null || !liveChest.beginTransfer()) {
+            return false;
+        }
+        if (!ChestIntegrityService.releaseToWorld(liveChest)) {
+            liveChest.abortTransfer();
+            return false;
+        }
+
+        for (ItemStack itemStack : liveChest.getInventory()) {
+            if (itemStack != null) {
+                player.getWorld().dropItemNaturally(player.getLocation(), itemStack);
+            }
+        }
+        return removeChest(liveChest);
     }
 
     public static CompletableFuture<Boolean> giveBackChestAsync(Player player, ChestData chest) {
@@ -59,14 +70,29 @@ public class DeadChestAPI {
             return future;
         }
 
+        final ChestData liveChest = resolveLiveChest(chest);
+        if (liveChest == null || !liveChest.beginTransfer()) {
+            future.complete(false);
+            return future;
+        }
+
         DeadChestLoader.getSchedulerAdapter().executeForEntity(player, () -> {
-            for (ItemStack itemStack : chest.getInventory()) {
+            // The content goes to the ground, which no player file can vouch for:
+            // the storage is cleared first so a crash can only lose the drop, never
+            // hand the same items out a second time.
+            if (!ChestIntegrityService.releaseToWorld(liveChest)) {
+                liveChest.abortTransfer();
+                future.complete(false);
+                return;
+            }
+
+            for (ItemStack itemStack : liveChest.getInventory()) {
                 if (itemStack != null) {
                     player.getWorld().dropItemNaturally(player.getLocation(), itemStack);
                 }
             }
 
-            removeChestAsync(chest).whenComplete((removed, throwable) -> {
+            removeChestAsync(liveChest).whenComplete((removed, throwable) -> {
                 if (throwable != null) {
                     future.completeExceptionally(throwable);
                     return;
@@ -76,6 +102,23 @@ public class DeadChestAPI {
         });
 
         return future;
+    }
+
+    /**
+     * Resolves the chest actually held in memory.
+     * <p>
+     * {@link #getChests(Player)} hands out copies, and acting on a copy would
+     * bypass the single hand over guard carried by the live entry.
+     *
+     * @param chest chest or chest copy
+     * @return live chest, or {@code null} when it is gone
+     */
+    private static ChestData resolveLiveChest(ChestData chest) {
+        if (chest == null) {
+            return null;
+        }
+        final ChestData liveChest = DeadChestLoader.getChestDataCache().getChestData(chest.getChestLocation());
+        return liveChest == null ? null : liveChest;
     }
 
     /**

@@ -3,6 +3,8 @@ package me.crylonz.deadchest.listener;
 import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.db.ChestDataRepository;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.IgnoreItemRules;
 import me.crylonz.deadchest.utils.Utils;
@@ -77,6 +79,16 @@ public class PlayerDeathListener implements Listener {
 
         Block block = world.getBlockAt(location);
 
+        // A deadchest already occupies that block: stacking a second one there
+        // makes both share the same storage key, and the older content becomes
+        // unreachable. Move away, or let vanilla handle the drops.
+        block = relocateIfAlreadyOccupied(world, block);
+        if (block == null) {
+            generateLog("Player [" + player.getName() + "] died on an existing deadchest and no free block was found : No Deadchest generated");
+            player.sendMessage(local.prefixed("death.not-generated"));
+            return;
+        }
+
         // 5) Inventory cleaning (vanishing, excluded/ignored items, durability, XP)
         sanitizeInventoryOnDeath(event, player);
 
@@ -98,7 +110,16 @@ public class PlayerDeathListener implements Listener {
         ArmorStand[] holos = createHolograms(block, event.getEntity().getDisplayName());
 
         // 8) Building & saving the DeadChest (ChestData), then restoring player inventory
-        buildAndSaveChestData(player, block, holos[HOLO_TIME], holos[HOLO_NAME], holos[HOLO_STATUS], itemsToStore);
+        if (!buildAndSaveChestData(player, block, holos[HOLO_TIME], holos[HOLO_NAME], holos[HOLO_STATUS], itemsToStore)) {
+            // The chest is not on disk. Clearing the inventory now would destroy
+            // the items, so the generation is rolled back and vanilla keeps the
+            // drops it already holds.
+            rollbackFailedGeneration(block, holos);
+            log.severe("[DeadChest] Deadchest of [" + player.getName() + "] could not be stored, items left to vanilla drops");
+            generateLog("Deadchest of [" + player.getName() + "] could not be stored : generation cancelled, items dropped by vanilla");
+            player.sendMessage(local.prefixed("death.not-generated"));
+            return;
+        }
 
         // 9) Clean up drops & remove remaining items on player side
         clearEventDropsAndPlayerInventory(event, player);
@@ -354,12 +375,35 @@ public class PlayerDeathListener implements Listener {
         return itemsToStore;
     }
 
-    private void buildAndSaveChestData(Player p, Block b, ArmorStand holoTime, ArmorStand holoName, ArmorStand holoStatus, ItemStack[] itemsToStore) {
+    /**
+     * Builds the chest, stamps the death on the player and stores everything
+     * before the caller is allowed to clear the inventory.
+     *
+     * @return {@code true} when the chest is durably stored
+     */
+    private boolean buildAndSaveChestData(Player p, Block b, ArmorStand holoTime, ArmorStand holoName, ArmorStand holoStatus, ItemStack[] itemsToStore) {
         PlayerInventory inv = p.getInventory();
         ItemStack[] snapshot = inv.getContents();
         inv.setContents(itemsToStore);
-        DeadChestLoader.getChestDataCache().addChestData(cerateChestData(p, b, holoTime, holoName, holoStatus, inv));
+        final ChestData chestData = cerateChestData(p, b, holoTime, holoName, holoStatus, inv);
         inv.setContents(snapshot);
+
+        // Stamp the player before anything is written: the stamp travels inside
+        // the same playerdata file as the inventory, so it is the proof that the
+        // death survived on the player side too.
+        ChestIntegrityService.beginDeath(p, chestData);
+
+        // Wait for the insert. An asynchronous write here can be lost by a hard
+        // kill happening in the same tick, and the inventory is cleared right
+        // after this call.
+        if (!ChestDataRepository.saveDurable(chestData)) {
+            generateLog("Could not store deadchest of [" + p.getName() + "] in " + b.getWorld().getName() +
+                    " at X:" + b.getX() + " Y:" + b.getY() + " Z:" + b.getZ());
+            return false;
+        }
+
+        DeadChestLoader.getChestDataCache().addChestData(chestData);
+        return true;
     }
 
     private static ChestData cerateChestData(final Player p, final Block b, final ArmorStand holoTime, final ArmorStand holoName, final ArmorStand holoStatus, final PlayerInventory inv) {
@@ -373,13 +417,38 @@ public class PlayerDeathListener implements Listener {
                 getTotalExperienceToStore(p)
         );
         chestData.setHolographicStatusId(holoStatus == null ? null : holoStatus.getUniqueId());
-        chestData.save(containsChestOnLoc -> {
-            if (containsChestOnLoc){
-                generateLog("Could not generate deadchest, as dublicate exist in database on same location [" + p.getName() + "] in " + b.getWorld().getName() +
-                        " at X:" + b.getX() + " Y:" + b.getY() + " Z:" + b.getZ());
-            }
-        });
         return chestData;
+    }
+
+    /**
+     * Returns a block free of any deadchest, or {@code null} when the death
+     * position and its surroundings are all taken.
+     */
+    private Block relocateIfAlreadyOccupied(World world, Block block) {
+        if (DeadChestLoader.getChestData(block.getLocation()) == null) {
+            return block;
+        }
+
+        final Location freeLocation = getFreeBlockAroundThisPlace(world, block.getLocation());
+        if (freeLocation == null || DeadChestLoader.getChestData(freeLocation) != null) {
+            return null;
+        }
+        return world.getBlockAt(freeLocation);
+    }
+
+    /**
+     * Undoes a generation that could not be persisted, so the world does not
+     * keep a chest the plugin does not know about.
+     */
+    private void rollbackFailedGeneration(Block block, ArmorStand[] holos) {
+        if (holos != null) {
+            for (ArmorStand holo : holos) {
+                if (holo != null) {
+                    holo.remove();
+                }
+            }
+        }
+        block.setType(Material.AIR);
     }
 
     private void clearEventDropsAndPlayerInventory(PlayerDeathEvent e, Player p) {

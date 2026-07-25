@@ -1,3 +1,17 @@
+## Deadchest 4.29.0 - 2026-07-25
+
+- Fixed the item duplication caused by a server killed without a clean shutdown (out of memory kill, `kill -9`, host crash).
+  The plugin database was written at death while the vanilla player file was not, so the player came back with the items still
+  in the inventory AND a deadchest holding a copy of them. Deaths and chest recoveries are now stamped on both sides and only
+  completed once the player data reached the disk, and a transfer left half done by a crash is settled at the next login.
+- Added `integrity.crash-protection`, `integrity.flush-player-data` and `integrity.on-rollback` to configure that behavior
+- Fixed items being destroyed when a deadchest could not be stored: the generation is now rolled back and vanilla drops apply
+- Fixed items being duplicated when a chest expired or was given back while the database write was still pending
+- Fixed a chest content being handed over twice by two interactions on the same chest
+- Fixed two deadchests sharing the same block, which left an unreachable row behind and could delete the wrong chest
+- Fixed deletions targeting a chest by position, which could remove a different chest stored on the same block
+- Database failures are now logged instead of being silently swallowed, and committed writes are flushed to disk
+
 ## Deadchest 4.28.0 - 2026-03-21
 
 - Added a two-phase loot system with a private phase (`chest.duration-seconds`) and an optional public loot phase (`chest.loot.*`)

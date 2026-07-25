@@ -17,6 +17,8 @@
   "chest.time-left": "left",
   "chest.double-block": "§cYou can't put a chest next to a Deadchest",
   "chest.no-permission-open": "§cYou are not allowed to open this chest",
+  "chest.not-reconciled": "§cThis Deadchest is being checked after a server crash, try again in a moment",
+  "chest.rollback-voided": "§eThe server crashed before your death was saved: your items are still in your inventory, the duplicated Deadchest has been removed",
   "death.above-max-height": "§cYou are dead above the maximum height.",
   "death.not-generated": "§cNo deadchest generated.",
   "death.position": "§6Your deadchest is at X: §f{0}§6 Y: §f{1}§6 Z: §f{2}",

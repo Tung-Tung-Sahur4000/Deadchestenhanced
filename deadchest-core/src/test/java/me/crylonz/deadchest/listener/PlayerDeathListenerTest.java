@@ -10,6 +10,9 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.DeadChestManager;
 import me.crylonz.deadchest.Localization;
+import me.crylonz.deadchest.db.SQLite;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
+import me.crylonz.deadchest.integrity.PlayerDataStamp;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.GameMode;
@@ -70,6 +73,7 @@ class PlayerDeathListenerTest {
         // Minimal plugin + statics
         DeadChestLoader.plugin = MockBukkit.createMockPlugin();
         DeadChestLoader.log = Logger.getLogger("DeadChestTest");
+        me.crylonz.deadchest.TestDatabase.start(DeadChestLoader.plugin);
 
         DeadChestLoader.getChestDataCache().setChestData(new ArrayList<>());
         DeadChestLoader.fileManager = mock(me.crylonz.deadchest.FileManager.class);
@@ -113,6 +117,7 @@ class PlayerDeathListenerTest {
         hologramMock = mockStatic(DeadChestManager.class);
         ArmorStand fakeStand = mock(ArmorStand.class);
         when(fakeStand.getLocation()).thenReturn(new Location(world, 0, 65, 0)); // évite NPE
+        when(fakeStand.getUniqueId()).thenReturn(java.util.UUID.randomUUID());
         hologramMock.when(() -> DeadChestManager.generateHologram(
                 any(Location.class), anyString(), anyFloat(), anyFloat(), anyFloat(), anyBoolean()
         )).thenReturn(fakeStand);
@@ -125,6 +130,7 @@ class PlayerDeathListenerTest {
         if (hologramMock != null) {
             hologramMock.close();
         }
+        me.crylonz.deadchest.TestDatabase.stop();
         MockBukkit.unmock();
     }
 
@@ -208,6 +214,43 @@ class PlayerDeathListenerTest {
         listener.onPlayerDeathEvent(evt);
 
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest when death occurs on rails and rails are disabled");
+    }
+
+    @Test
+    void deathStagesTheChestUntilThePlayerDataIsSaved() {
+        when(cfg.getBoolean(ConfigKey.INTEGRITY_PROTECTION_ENABLED)).thenReturn(true);
+        world.getBlockAt(player.getLocation()).setType(Material.AIR);
+        player.getInventory().setItem(0, new ItemStack(Material.EMERALD, 1));
+
+        listener.onPlayerDeathEvent(deathEvent());
+
+        ChestData chestData = new ArrayList<>(DeadChestLoader.getChestDataCache().getAllChestData().values()).get(0);
+        assertEquals(ChestIntegrityState.PENDING, chestData.getIntegrityState(),
+                "The chest waits for the death to be written on the player side");
+        assertEquals(player.getUniqueId(), chestData.getIntegrityOwner());
+        assertEquals(chestData.getIntegritySequence(), PlayerDataStamp.readSequence(player),
+                "The player must carry the stamp that proves the death");
+    }
+
+    @Test
+    void deathLeavesItemsToVanillaWhenTheChestCannotBeStored() {
+        world.getBlockAt(player.getLocation()).setType(Material.AIR);
+        player.getInventory().setItem(0, new ItemStack(Material.EMERALD, 1));
+
+        SQLite workingDatabase = DeadChestLoader.db;
+        DeadChestLoader.db = null; // storage unavailable
+        try {
+            PlayerDeathEvent event = deathEvent();
+            listener.onPlayerDeathEvent(event);
+
+            assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest may be tracked without its row");
+            assertEquals(Material.AIR, world.getBlockAt(player.getLocation()).getType(),
+                    "The generated block must be rolled back");
+            assertTrue(player.getInventory().contains(Material.EMERALD),
+                    "Items must stay with the player instead of being destroyed");
+        } finally {
+            DeadChestLoader.db = workingDatabase;
+        }
     }
 
     @Test

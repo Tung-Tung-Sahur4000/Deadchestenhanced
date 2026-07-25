@@ -69,6 +69,33 @@ The timeout model is therefore:
 |----------------------------------|---------|---------|------------------------------------------|
 | `maintenance.cleanup-on-startup` | boolean | `false` | Remove all DeadChests on server startup. |
 
+### Integrity (crash duplication protection)
+
+| Key                             | Type    | Default | Description                                                                                     |
+|---------------------------------|---------|---------|-------------------------------------------------------------------------------------------------|
+| `integrity.crash-protection`    | boolean | `true`  | Detect and cancel the item duplication caused by a server killed without a clean shutdown.       |
+| `integrity.flush-player-data`   | boolean | `true`  | Write the player data to disk as soon as items move between a player and a chest.                |
+| `integrity.on-rollback`         | string  | `void`  | What to do with a chest proven to be a crash duplicate: `void` (delete) or `keep` (log only).    |
+
+The plugin database is written the moment a player dies, while the vanilla
+`playerdata/<uuid>.dat` file is only written on autosave, on quit or on a clean
+shutdown. When the server is killed without shutting down (out of memory kill,
+`kill -9`, host crash), the two disagree: the DeadChest survives with the items,
+while the player file rolls back to before the death and the player logs back in
+with the same items still in the inventory.
+
+With `crash-protection` enabled, every transfer between a player and a chest is
+stamped on both sides and only completed once the player data reached the disk.
+A transfer left half done by a crash is settled when the player reconnects:
+
+- the death never reached the player file: the player already owns the items, the
+  chest is a duplicate and is removed (or kept, with `on-rollback: keep`);
+- the hand over never reached the player file: the player never kept the items,
+  the chest comes back with its content.
+
+Until that decision can be made, the chest stays locked: it cannot be opened, it
+does not expire and it does not drop its content.
+
 ### Generation Rules
 
 | Key                              | Type    | Default | Description                                       |
