@@ -15,8 +15,6 @@ public class DeadChestConfig {
 
     private final Plugin plugin;
     private static final HashMap<String, Object> configData = new HashMap<>();
-    private final FileConfiguration configuration = YamlConfiguration.loadConfiguration(new File("config.yml"));
-
     public DeadChestConfig(Plugin plugin) {
         this.plugin = plugin;
     }
@@ -341,9 +339,5 @@ public class DeadChestConfig {
             return fallbackValue;
         }
         return normalizeValue(legacyValue, fallbackValue, configKey);
-    }
-
-    public FileConfiguration getConfiguration() {
-        return configuration;
     }
 }

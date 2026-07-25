@@ -17,9 +17,12 @@ public class PistonListener implements Listener {
             if (block != null && (block.getType() == Material.PLAYER_HEAD || block.getType() == Material.PLAYER_WALL_HEAD)) {
                 final ChestData chestData = DeadChestLoader.getChestData(block.getLocation());
                 if (chestData == null) {
-                    return;
+                    // Another head is being pushed, keep looking at the rest of the
+                    // line: returning here left the deadchests behind it unprotected.
+                    continue;
                 }
                 event.setCancelled(true);
+                return;
             }
         }
     }

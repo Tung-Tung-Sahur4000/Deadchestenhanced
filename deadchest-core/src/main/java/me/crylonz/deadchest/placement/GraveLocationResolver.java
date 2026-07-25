@@ -66,8 +66,6 @@ public final class GraveLocationResolver {
             return null;
         }
 
-        PROBE_BUDGET.get()[0] = MAX_BUILD_PROBES;
-
         final Location candidate = environmentCandidate(player, GraveBlocks.blockLocation(deathLocation));
         return findPlaceable(player, candidate == null ? GraveBlocks.blockLocation(deathLocation) : candidate);
     }
@@ -276,6 +274,9 @@ public final class GraveLocationResolver {
      */
     @Nullable
     public static Location findPlaceable(final Player player, final Location candidate) {
+        // One budget per resolution, reset here so a direct call gets a fresh one.
+        PROBE_BUDGET.get()[0] = MAX_BUILD_PROBES;
+
         final Location start = clampToWorld(candidate);
         if (start == null) {
             return null;

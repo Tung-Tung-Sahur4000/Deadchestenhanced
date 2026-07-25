@@ -47,7 +47,6 @@ public class DeadChestLoader {
     public static Inventory ignoreList;
 
     public static boolean bstats = true;
-    public static boolean isChangesNeedToBeSave = false;
 
     public static DeadChestConfig config;
 
@@ -365,10 +364,6 @@ public class DeadChestLoader {
     public static EffectAnimationStyle getConfiguredAnimationStyle() {
         EffectAnimationStyle style = EffectAnimationStyle.fromInput(config.getString(ConfigKey.EFFECT_ANIMATION_STYLE));
         return style == null ? EffectAnimationStyle.SOUL : style;
-    }
-
-    public DeadChestConfig getDataConfig() {
-        return config;
     }
 
 }

@@ -115,7 +115,7 @@ public class ChestDataRepository {
                                 ")"
                 );
                 st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_player ON chest_data(player_uuid)");
-                ckeckIfUpdated();
+                migrateSchema(st);
                 st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_location ON chest_data(chest_world, chest_x, chest_y, chest_z)");
                 st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_chest_death_id ON chest_data(death_id)");
                 afterCreation.run();
@@ -609,64 +609,64 @@ public class ChestDataRepository {
         }
     }
 
-    private static void ckeckIfUpdated() {
-        try (Connection connection = db.connection();
-             Statement st = connection.createStatement()) {
-            final List<String> columns = new ArrayList<>();
+    /**
+     * Brings an existing table up to the current schema.
+     * <p>
+     * Works on the statement opened by {@link #initTable(Runnable)} instead of
+     * asking for its own connection: {@link SQLite#connection()} hands out one
+     * shared connection, so closing it here would also close the caller's
+     * statement and silently kill the rest of the initialization.
+     *
+     * @param st statement owned by the caller
+     */
+    private static void migrateSchema(Statement st) throws SQLException {
+        final List<String> columns = new ArrayList<>();
 
-            try (ResultSet rs = st.executeQuery("PRAGMA index_info('idx_chest_location')")) {
-                while (rs.next()) {
-                    columns.add(rs.getString("name"));
-                }
+        try (ResultSet rs = st.executeQuery("PRAGMA index_info('idx_chest_location')")) {
+            while (rs.next()) {
+                columns.add(rs.getString("name"));
             }
+        }
 
-            final boolean hasCorrectIndex =
-                    columns.size() == 4 &&
-                            columns.get(0).equals("chest_world") &&
-                            columns.get(1).equals("chest_x") &&
-                            columns.get(2).equals("chest_y") &&
-                            columns.get(3).equals("chest_z");
+        final boolean hasCorrectIndex =
+                columns.size() == 4 &&
+                        columns.get(0).equals("chest_world") &&
+                        columns.get(1).equals("chest_x") &&
+                        columns.get(2).equals("chest_y") &&
+                        columns.get(3).equals("chest_z");
 
-            if (!hasCorrectIndex) {
-                try (Statement createIndex = connection.createStatement()) {
-                    createIndex.execute("DROP INDEX IF EXISTS idx_chest_location");
-                    createIndex.execute(
-                            "CREATE INDEX idx_chest_location " +
-                                    "ON chest_data (chest_world, chest_x, chest_y, chest_z)"
-                    );
-                }
-            }
+        if (!hasCorrectIndex) {
+            st.execute("DROP INDEX IF EXISTS idx_chest_location");
+            st.execute("CREATE INDEX idx_chest_location ON chest_data (chest_world, chest_x, chest_y, chest_z)");
+        }
 
-            final List<String> tableColumns = new ArrayList<>();
-            try (ResultSet rs = st.executeQuery("PRAGMA table_info('chest_data')")) {
-                while (rs.next()) {
-                    tableColumns.add(rs.getString("name"));
-                }
+        final List<String> tableColumns = new ArrayList<>();
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info('chest_data')")) {
+            while (rs.next()) {
+                tableColumns.add(rs.getString("name"));
             }
+        }
 
-            if (!tableColumns.contains("killer_uuid")) {
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN killer_uuid TEXT");
-            }
-            if (!tableColumns.contains("holographic_status_id")) {
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN holographic_status_id TEXT");
-            }
-            if (!tableColumns.contains("death_id")) {
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN death_id TEXT");
-            }
-            if (!tableColumns.contains("integrity_state")) {
-                // Chests written before the crash-consistency handshake existed are
-                // adopted as confirmed: their death is long persisted on the player
-                // side, and voiding them on upgrade would delete legitimate loot.
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_state TEXT NOT NULL DEFAULT 'CONFIRMED'");
-            }
-            if (!tableColumns.contains("integrity_seq")) {
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_seq BIGINT NOT NULL DEFAULT 0");
-            }
-            if (!tableColumns.contains("integrity_owner")) {
-                st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_owner TEXT");
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        if (!tableColumns.contains("killer_uuid")) {
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN killer_uuid TEXT");
+        }
+        if (!tableColumns.contains("holographic_status_id")) {
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN holographic_status_id TEXT");
+        }
+        if (!tableColumns.contains("death_id")) {
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN death_id TEXT");
+        }
+        if (!tableColumns.contains("integrity_state")) {
+            // Chests written before the crash-consistency handshake existed are
+            // adopted as confirmed: their death is long persisted on the player
+            // side, and voiding them on upgrade would delete legitimate loot.
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_state TEXT NOT NULL DEFAULT 'CONFIRMED'");
+        }
+        if (!tableColumns.contains("integrity_seq")) {
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_seq BIGINT NOT NULL DEFAULT 0");
+        }
+        if (!tableColumns.contains("integrity_owner")) {
+            st.executeUpdate("ALTER TABLE chest_data ADD COLUMN integrity_owner TEXT");
         }
     }
 

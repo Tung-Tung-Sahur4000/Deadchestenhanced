@@ -117,8 +117,7 @@ public class DeadChestAPI {
         if (chest == null) {
             return null;
         }
-        final ChestData liveChest = DeadChestLoader.getChestDataCache().getChestData(chest.getChestLocation());
-        return liveChest == null ? null : liveChest;
+        return DeadChestLoader.getChestDataCache().getChestData(chest.getChestLocation());
     }
 
     /**

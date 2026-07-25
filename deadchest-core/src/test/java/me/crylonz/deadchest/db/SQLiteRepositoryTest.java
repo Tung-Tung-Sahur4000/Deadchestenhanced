@@ -399,6 +399,30 @@ class SQLiteRepositoryTest {
     }
 
     @Test
+    void schemaInitializationCompletesEveryStep() throws Exception {
+        // The schema migration used to close the shared connection, which killed
+        // the statements that follow it: the indexes were missing and the legacy
+        // migration callback never ran.
+        final boolean[] callbackRan = new boolean[1];
+        ChestDataRepository.initTable(() -> callbackRan[0] = true);
+        awaitAsyncDb();
+
+        assertTrue(callbackRan[0], "The post-creation callback must run");
+
+        List<String> indexes = new ArrayList<>();
+        try (Statement st = DeadChestLoader.db.connection().createStatement();
+             ResultSet rs = st.executeQuery("SELECT name FROM sqlite_master WHERE type='index'")) {
+            while (rs.next()) {
+                indexes.add(rs.getString("name"));
+            }
+        }
+
+        assertTrue(indexes.contains("idx_chest_player"), "player index missing : " + indexes);
+        assertTrue(indexes.contains("idx_chest_location"), "location index missing : " + indexes);
+        assertTrue(indexes.contains("idx_chest_death_id"), "death id index missing : " + indexes);
+    }
+
+    @Test
     void legacyTableGainsIntegrityColumnsAndKeepsItsChestsUsable() throws Exception {
         ChestData legacyChest = chestDataAt(70, Material.DIAMOND, 1, false, 3);
         ChestDataRepository.save(legacyChest);

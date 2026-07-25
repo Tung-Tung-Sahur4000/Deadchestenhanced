@@ -25,6 +25,16 @@
 - Fixed deletions targeting a chest by position, which could remove a different chest stored on the same block
 - Database failures are now logged instead of being silently swallowed, and committed writes are flushed to disk
 
+- Fixed the storage initialization stopping halfway: the schema migration closed the shared connection, so the location and
+  death id indexes were never created and the legacy `chestData.yml` migration callback never ran
+- Fixed an explosion destroying a DeadChest placed right next to another one, the protection loop skipped a block every time
+  it protected one
+- Fixed a piston pushing a line of heads only protecting the DeadChest when it came first
+- Fixed `/dc` tab completion offering `remove` to players who may only list, and `list` to players who may only remove
+- Removed dead code: unused chest accessors, an unused config accessor that parsed a `config.yml` from the server root on
+  every startup, and the height helper left behind by the placement rework
+- The CI workflow now builds the shaded plugin jar and uploads it, together with the test reports, as build artifacts
+
 ## Deadchest 4.28.0 - 2026-03-21
 
 - Added a two-phase loot system with a private phase (`chest.duration-seconds`) and an optional public loot phase (`chest.loot.*`)

@@ -317,10 +317,6 @@ public final class ChestData {
         return deathId;
     }
 
-    public String getDeathStringId() {
-        return deathId == null ? null : deathId.toString();
-    }
-
     public void setDeathId(final UUID deathId) {
         this.deathId = deathId == null ? UUID.randomUUID() : deathId;
     }
@@ -375,13 +371,6 @@ public final class ChestData {
      */
     public void abortTransfer() {
         transferLock.set(false);
-    }
-
-    /**
-     * @return {@code true} when a hand over is in progress or already done
-     */
-    public boolean isTransferStarted() {
-        return transferLock.get();
     }
 
     public void save(@Nonnull final Consumer<Boolean> containsChestOnLoc) {

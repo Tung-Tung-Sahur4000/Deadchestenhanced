@@ -32,15 +32,18 @@ public class DCTabCompletion implements TabCompleter {
                         list.add("ignore");
                     }
 
-                    if (PermissionUtils.hasAdminOrOneOf(player, PermissionUtils.LIST_ALL)) {
+                    // Each entry is gated by its own permissions: the remove and
+                    // list checks used to be crossed, offering a command to the
+                    // players who could not run it.
+                    if (PermissionUtils.hasAdminOrOneOf(player, PermissionUtils.REMOVE_ALL)) {
                         list.add("remove");
                     }
 
                     if (PermissionUtils.hasAdminOr(player, Permission.GIVEBACK)) {
-                        list.add("giveBack");
+                        list.add("giveback");
                     }
 
-                    if (PermissionUtils.hasAdminOrOneOf(player, PermissionUtils.REMOVE_ALL)) {
+                    if (PermissionUtils.hasAdminOrOneOf(player, PermissionUtils.LIST_ALL)) {
                         list.add("list");
                     }
                 }
