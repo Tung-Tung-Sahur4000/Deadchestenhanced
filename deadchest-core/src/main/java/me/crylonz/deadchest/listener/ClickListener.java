@@ -290,6 +290,10 @@ public class ClickListener implements Listener {
         }
 
         final Particle particle = resolveParticle(config.getString(ConfigKey.PICKUP_ANIMATION_PARTICLE));
+        if (particle == null) {
+            return; // no usable particle on this server version, skip the effect
+        }
+
         final int count = Math.max(1, Math.min(config.getInt(ConfigKey.PICKUP_ANIMATION_COUNT), 250));
         final double offsetX = clamp(config.getDouble(ConfigKey.PICKUP_ANIMATION_OFFSET_X), 0.0D, 3.0D);
         final double offsetY = clamp(config.getDouble(ConfigKey.PICKUP_ANIMATION_OFFSET_Y), 0.0D, 3.0D);
@@ -301,14 +305,40 @@ public class ClickListener implements Listener {
         block.getWorld().spawnParticle(particle, center, count, offsetX, offsetY, offsetZ, speed);
     }
 
+    /**
+     * Resolves the configured particle, then a list of fallbacks.
+     * <p>
+     * Every name is looked up at runtime rather than compiled in: Minecraft
+     * renames particles between versions (TOTEM became TOTEM_OF_UNDYING,
+     * FIREWORKS_SPARK became FIREWORK), and a compiled constant that no longer
+     * exists throws {@link NoSuchFieldError} instead of falling back.
+     *
+     * @return a particle this server knows, or {@code null} when none match
+     */
     private Particle resolveParticle(String particleName) {
-        if (particleName != null && !particleName.trim().isEmpty()) {
-            try {
-                return Particle.valueOf(particleName.trim().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
+        Particle configured = particleByName(particleName);
+        if (configured != null) {
+            return configured;
+        }
+
+        for (String fallback : PARTICLE_FALLBACKS) {
+            Particle resolved = particleByName(fallback);
+            if (resolved != null) {
+                return resolved;
             }
         }
-        return Particle.TOTEM;
+        return null;
+    }
+
+    private Particle particleByName(String particleName) {
+        if (particleName == null || particleName.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Particle.valueOf(particleName.trim().toUpperCase());
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private void playPickupSound(Block block, Player player) {
@@ -317,24 +347,65 @@ public class ClickListener implements Listener {
         }
 
         Sound sound = resolveSound(config.getString(ConfigKey.PICKUP_SOUND_NAME));
+        if (sound == null) {
+            return; // no usable sound on this server version, skip it
+        }
+
         float volume = (float) clamp(config.getDouble(ConfigKey.PICKUP_SOUND_VOLUME), 0.0D, 10.0D);
         float pitch = (float) clamp(config.getDouble(ConfigKey.PICKUP_SOUND_PITCH), 0.2D, 2.0D);
         player.playSound(block.getLocation(), sound, volume, pitch);
     }
 
+    /**
+     * Same runtime lookup as {@link #resolveParticle(String)}: sound constants
+     * also come and go between Minecraft versions.
+     *
+     * @return a sound this server knows, or {@code null} when none match
+     */
     private Sound resolveSound(String soundName) {
-        if (soundName != null && !soundName.trim().isEmpty()) {
-            try {
-                return Sound.valueOf(soundName.trim().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
+        Sound configured = soundByName(soundName);
+        if (configured != null) {
+            return configured;
+        }
+
+        for (String fallback : SOUND_FALLBACKS) {
+            Sound resolved = soundByName(fallback);
+            if (resolved != null) {
+                return resolved;
             }
         }
-        return Sound.ENTITY_EXPERIENCE_ORB_PICKUP;
+        return null;
+    }
+
+    private Sound soundByName(String soundName) {
+        if (soundName == null || soundName.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Sound.valueOf(soundName.trim().toUpperCase());
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
+
+    /**
+     * Particle names tried when the configured one is unknown, newest naming
+     * first.
+     */
+    private static final String[] PARTICLE_FALLBACKS = {
+            "TOTEM_OF_UNDYING", "TOTEM", "FIREWORK", "FIREWORKS_SPARK", "FLAME", "CLOUD"
+    };
+
+    /**
+     * Sound names tried when the configured one is unknown.
+     */
+    private static final String[] SOUND_FALLBACKS = {
+            "ENTITY_EXPERIENCE_ORB_PICKUP", "ENTITY_ITEM_PICKUP", "BLOCK_CHEST_OPEN"
+    };
 
     private static final BlockFace[] CHECK_FACES = {
             BlockFace.NORTH,

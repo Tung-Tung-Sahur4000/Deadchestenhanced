@@ -38,6 +38,9 @@
   threw on the first death of any older server. It is now resolved by name.
 - The respawn compass is no longer handed out on servers without persistent item data (before Minecraft 1.14), where it could
   not be recognized and would have been dropped or stored like a normal item
+- Pickup particle and sound are now resolved by name with fallbacks instead of compiled constants. Minecraft renames them
+  between versions (TOTEM became TOTEM_OF_UNDYING, FIREWORKS_SPARK became FIREWORK), and the old fallback would have thrown on
+  a version where its constant no longer exists. When nothing matches, the effect is skipped instead of breaking the pickup.
 
 ## Deadchest 4.28.0 - 2026-03-21
 
