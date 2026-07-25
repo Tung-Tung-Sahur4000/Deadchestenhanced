@@ -34,6 +34,10 @@
 - Removed dead code: unused chest accessors, an unused config accessor that parsed a `config.yml` from the server root on
   every startup, and the height helper left behind by the placement rework
 - The CI workflow now builds the shaded plugin jar and uploads it, together with the test reports, as build artifacts
+- Fixed the placement chain referencing the `FREEZE` damage cause directly, which does not exist before Minecraft 1.17 and
+  threw on the first death of any older server. It is now resolved by name.
+- The respawn compass is no longer handed out on servers without persistent item data (before Minecraft 1.14), where it could
+  not be recognized and would have been dropped or stored like a normal item
 
 ## Deadchest 4.28.0 - 2026-03-21
 

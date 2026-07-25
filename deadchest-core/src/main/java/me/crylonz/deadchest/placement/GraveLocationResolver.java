@@ -50,6 +50,13 @@ public final class GraveLocationResolver {
 
     private static final ThreadLocal<int[]> PROBE_BUDGET = ThreadLocal.withInitial(() -> new int[]{MAX_BUILD_PROBES});
 
+    /**
+     * Resolved by name because the constant only exists since Minecraft 1.17.
+     * Referencing it directly would throw {@link NoSuchFieldError} on an older
+     * server the very first time a player dies.
+     */
+    private static final EntityDamageEvent.DamageCause FREEZE_CAUSE = damageCauseByName("FREEZE");
+
     private GraveLocationResolver() {
     }
 
@@ -101,7 +108,7 @@ public final class GraveLocationResolver {
             return waterCandidate(death);
         }
 
-        if (GraveBlocks.isPowderSnow(deathBlock) || cause == EntityDamageEvent.DamageCause.FREEZE) {
+        if (GraveBlocks.isPowderSnow(deathBlock) || (FREEZE_CAUSE != null && cause == FREEZE_CAUSE)) {
             return powderSnowCandidate(player, death);
         }
 
@@ -543,6 +550,19 @@ public final class GraveLocationResolver {
             return null;
         }
         return world.getBlockAt(location.getBlockX(), y, location.getBlockZ());
+    }
+
+    /**
+     * @param name damage cause constant name
+     * @return the constant, or {@code null} when this server version has none
+     */
+    @Nullable
+    private static EntityDamageEvent.DamageCause damageCauseByName(final String name) {
+        try {
+            return EntityDamageEvent.DamageCause.valueOf(name);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     @Nullable

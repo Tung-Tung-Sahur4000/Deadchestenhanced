@@ -154,6 +154,18 @@ class GraveCompassServiceTest {
     }
 
     @Test
+    void theCompassIsAlwaysTaggedWhenItIsHandedOut() {
+        // A compass that cannot be tagged is not given at all: an untagged one
+        // would be dropped on death and stored in graves like a normal item.
+        final ChestData chest = trackChest(20, new Date());
+
+        final ItemStack compass = GraveCompassService.createCompass(chest);
+
+        assertNotNull(compass);
+        assertTrue(GraveCompassService.isGraveCompass(compass));
+    }
+
+    @Test
     void aPlainCompassIsNotAGraveCompass() {
         assertFalse(GraveCompassService.isGraveCompass(new ItemStack(Material.COMPASS)));
         assertFalse(GraveCompassService.isGraveCompass(new ItemStack(Material.DIAMOND)));

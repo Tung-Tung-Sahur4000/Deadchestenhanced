@@ -78,6 +78,13 @@ public final class GraveCompassService {
         }
 
         final ItemStack compass = createCompass(target);
+        if (compass == null) {
+            // No persistent data on this server version: an untagged compass could
+            // not be recognized later, so it would end up dropped or stored in a
+            // grave like any other item. Better not to hand one out at all.
+            return;
+        }
+
         final Collection<ItemStack> overflow = player.getInventory().addItem(compass).values();
         for (ItemStack leftover : overflow) {
             // No room: dropping it would break the "cannot leave the inventory"
@@ -118,8 +125,9 @@ public final class GraveCompassService {
 
         // The item is only rewritten when it points somewhere else, so a player
         // holding the compass does not see it replaced on every update.
-        if (!alreadyTargets(player.getInventory().getItem(slot), target)) {
-            player.getInventory().setItem(slot, createCompass(target));
+        final ItemStack retargeted = alreadyTargets(player.getInventory().getItem(slot), target) ? null : createCompass(target);
+        if (retargeted != null) {
+            player.getInventory().setItem(slot, retargeted);
         }
         pointVanillaCompass(player, target.getChestLocation());
     }
@@ -263,13 +271,15 @@ public final class GraveCompassService {
      * Builds the compass item targeting a chest.
      *
      * @param target chest to point at
-     * @return tagged compass
+     * @return tagged compass, or {@code null} when this server cannot carry the
+     * tag that identifies it as a plugin item
      */
+    @Nullable
     public static ItemStack createCompass(final ChestData target) {
         final ItemStack compass = new ItemStack(Material.COMPASS, 1);
         final ItemMeta meta = compass.getItemMeta();
         if (meta == null) {
-            return compass;
+            return null;
         }
 
         meta.setDisplayName(local.get("compass.name"));
@@ -281,14 +291,33 @@ public final class GraveCompassService {
                 location.getWorld() == null ? target.getWorldName() : location.getWorld().getName()));
         meta.setLore(lore);
 
-        meta.getPersistentDataContainer().set(key(), PersistentDataType.BYTE, (byte) 1);
-        if (target.getDeathId() != null) {
-            meta.getPersistentDataContainer().set(targetKey(), PersistentDataType.STRING, target.getDeathId().toString());
+        if (!tag(meta, target)) {
+            return null;
         }
         applyLodestone(meta, location);
 
         compass.setItemMeta(meta);
         return compass;
+    }
+
+    /**
+     * Marks the item as a deadchest compass and records what it points at.
+     *
+     * @return {@code false} when the server has no persistent data container,
+     * which is the case before Minecraft 1.14
+     */
+    private static boolean tag(final ItemMeta meta, final ChestData target) {
+        try {
+            meta.getPersistentDataContainer().set(key(), PersistentDataType.BYTE, (byte) 1);
+            if (target.getDeathId() != null) {
+                meta.getPersistentDataContainer().set(targetKey(), PersistentDataType.STRING, target.getDeathId().toString());
+            }
+            return true;
+        } catch (Throwable t) {
+            DeadChestLoader.log.warning("[DeadChest] This server cannot tag items with persistent data, "
+                    + "the deadchest compass is disabled : " + t);
+            return false;
+        }
     }
 
     /**
