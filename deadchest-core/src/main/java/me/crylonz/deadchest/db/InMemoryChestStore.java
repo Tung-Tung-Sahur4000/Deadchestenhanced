@@ -206,6 +206,19 @@ public class InMemoryChestStore {
      */
     public void removeChestData(@Nonnull final ChestData chest) {
         chest.removeArmorStand();
+        detachChestData(chest);
+    }
+
+    /**
+     * Removes a chest from memory and from the database without touching the
+     * world.
+     * <p>
+     * Used when the block and the holograms have to be cleaned up on another
+     * thread than the caller, while the chest must stop counting right away.
+     *
+     * @param chest chest to detach
+     */
+    public void detachChestData(@Nonnull final ChestData chest) {
         chest.remove();
         removePlayerData(chest);
         chestDataMap.remove(normalizeLocation(chest.getChestLocation()));

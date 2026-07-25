@@ -4,6 +4,7 @@ import be.seeseemelk.mockbukkit.MockBukkit;
 import be.seeseemelk.mockbukkit.ServerMock;
 import be.seeseemelk.mockbukkit.WorldMock;
 import be.seeseemelk.mockbukkit.entity.PlayerMock;
+import me.crylonz.deadchest.db.InMemoryChestStore;
 import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.db.IgnoreItemListRepository;
 import me.crylonz.deadchest.db.SQLExecutor;
@@ -655,6 +656,57 @@ class DeadChestManagerTest {
 
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty());
         assertEquals(Material.AIR, world.getBlockAt(loc).getType());
+    }
+
+    @Test
+    void replaceOldestChestFreesTheSlotOfTheOldestGrave() {
+        PlayerMock player = server.addPlayer("Steve");
+        when(config.getBoolean(ConfigKey.ITEMS_DROPPED_AFTER_TIMEOUT)).thenReturn(false);
+
+        ChestData oldest = playerChestAt(player, 80, new Date(1_000L));
+        ChestData newest = playerChestAt(player, 81, new Date(9_000L));
+        world.getBlockAt(oldest.getChestLocation()).setType(Material.CHEST);
+        world.getBlockAt(newest.getChestLocation()).setType(Material.CHEST);
+
+        assertTrue(DeadChestManager.replaceOldestChest(player));
+
+        assertNull(DeadChestLoader.getChestDataCache().getChestData(oldest.getChestLocation()),
+                "The oldest grave makes room for the new death");
+        assertNotNull(DeadChestLoader.getChestDataCache().getChestData(newest.getChestLocation()),
+                "The other graves of the player are untouched");
+        assertEquals(Material.AIR, world.getBlockAt(oldest.getChestLocation()).getType());
+    }
+
+    @Test
+    void replaceOldestChestDoesNothingWithoutAnyChest() {
+        PlayerMock player = server.addPlayer("Alex");
+
+        assertFalse(DeadChestManager.replaceOldestChest(player));
+    }
+
+    @Test
+    void replaceOldestChestKeepsAChestWaitingForReconciliation() {
+        PlayerMock player = server.addPlayer("Bob");
+        ChestData unsettled = playerChestAt(player, 82, new Date(1_000L));
+        when(unsettled.isSettled()).thenReturn(false);
+
+        assertFalse(DeadChestManager.replaceOldestChest(player),
+                "A chest that may still belong to the player inventory is not replaced");
+        assertNotNull(DeadChestLoader.getChestDataCache().getChestData(unsettled.getChestLocation()));
+    }
+
+    /**
+     * Tracked chest of a player, dated so the oldest one can be told apart.
+     */
+    private ChestData playerChestAt(PlayerMock player, int x, Date date) {
+        ChestData chestData = mockChest();
+        when(chestData.getChestLocation()).thenReturn(new Location(world, x, 64, x));
+        when(chestData.getHolographicTimer()).thenReturn(new Location(world, x, 65, x));
+        when(chestData.getPlayerUUID()).thenReturn(player.getUniqueId());
+        when(chestData.getPlayerName()).thenReturn(player.getName());
+        when(chestData.getChestDate()).thenReturn(date);
+        DeadChestLoader.getChestDataCache().addChestData(chestData);
+        return chestData;
     }
 
     /**

@@ -1,5 +1,18 @@
 ## Deadchest 4.29.0 - 2026-07-25
 
+- Added a respawn compass pointing at the latest DeadChest (`respawn.compass`). It cannot be dropped, cannot be moved into a
+  container, is never stored in a DeadChest, is retargeted every `respawn.compass-update-seconds`, and disappears once every
+  chest has been collected
+- Added `chest.replace-oldest` to replace the oldest DeadChest instead of creating none when a player reaches the limit
+- Reworked where a DeadChest is placed into a single resolution chain (`generation.placement.*`), so the options never conflict:
+  the death context selects one rule (void, lava, water, powder snow, suffocation, free fall), then the position is validated
+  against the world border, the build height, the blocks already used and the protection plugins
+- Added `generation.placement.safe-location` to only create DeadChests where the owner may build, asking protection plugins the
+  same way a real block placement would
+- Added void, lava-top, lava-smart, water-top, water-bottom, suffocation, powder-snow and ground placement rules
+- Fixed two entities dying on the same block sharing one position: the second DeadChest now moves to the closest free block
+- Fixed a DeadChest refused by the world border or by the build height: it is now placed below the death position instead of
+  not being created
 - Fixed the item duplication caused by a server killed without a clean shutdown (out of memory kill, `kill -9`, host crash).
   The plugin database was written at death while the vanilla player file was not, so the player came back with the items still
   in the inventory AND a deadchest holding a copy of them. Deaths and chest recoveries are now stamped on both sides and only

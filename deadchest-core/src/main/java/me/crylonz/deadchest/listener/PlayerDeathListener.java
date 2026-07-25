@@ -5,6 +5,7 @@ import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Permission;
 import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import me.crylonz.deadchest.placement.GraveLocationResolver;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.IgnoreItemRules;
 import me.crylonz.deadchest.utils.Utils;
@@ -28,6 +29,7 @@ import java.util.Objects;
 
 import static me.crylonz.deadchest.DeadChestLoader.*;
 import static me.crylonz.deadchest.DeadChestManager.playerDeadChestAmount;
+import static me.crylonz.deadchest.DeadChestManager.replaceOldestChest;
 import static me.crylonz.deadchest.utils.ConfigKey.GENERATE_DEADCHEST_IN_CREATIVE;
 import static me.crylonz.deadchest.utils.ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH;
 import static me.crylonz.deadchest.utils.ExpUtils.getTotalExperienceToStore;
@@ -70,24 +72,18 @@ public class PlayerDeathListener implements Listener {
 
         if (disallowedFluidOrRailOrMinecart(player, location)) return;
 
-        // 4) Position adjustments (world bottom/top, doors, solids, fragile surface)
-        location = adjustLocationForWorldBounds(world, location, player);
-        if (location == null) return; // keep original behavior (message + return)
-
-        location = adjustForDoorsAndSolids(world, location);
-        adjustForGroundBlocks(world, location);
-
-        Block block = world.getBlockAt(location);
-
-        // A deadchest already occupies that block: stacking a second one there
-        // makes both share the same storage key, and the older content becomes
-        // unreachable. Move away, or let vanilla handle the drops.
-        block = relocateIfAlreadyOccupied(world, block);
-        if (block == null) {
-            generateLog("Player [" + player.getName() + "] died on an existing deadchest and no free block was found : No Deadchest generated");
+        // 4) Where the grave goes: one chained resolution handling the void, lava,
+        // water, powder snow, suffocation and free fall, then the world border,
+        // the build height, the protected regions and the blocks already taken by
+        // another grave.
+        final Location graveLocation = GraveLocationResolver.resolve(player, location);
+        if (graveLocation == null) {
+            generateLog("Player [" + player.getName() + "] died where no deadchest can be placed : No Deadchest generated");
             player.sendMessage(local.prefixed("death.not-generated"));
             return;
         }
+
+        Block block = world.getBlockAt(graveLocation);
 
         // 5) Inventory cleaning (vanishing, excluded/ignored items, durability, XP)
         sanitizeInventoryOnDeath(event, player);
@@ -168,8 +164,27 @@ public class PlayerDeathListener implements Listener {
     }
 
     private boolean underPerPlayerLimit(Player p) {
-        return (playerDeadChestAmount(p) < config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER) ||
-                config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER) == 0) && p.getMetadata("NPC").isEmpty();
+        if (!p.getMetadata("NPC").isEmpty()) {
+            return false;
+        }
+
+        final int maxPerPlayer = config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER);
+        if (maxPerPlayer == 0 || playerDeadChestAmount(p) < maxPerPlayer) {
+            return true;
+        }
+
+        // Limit reached: either the death is not stored, or the oldest grave makes
+        // room for the new one.
+        if (!config.getBoolean(ConfigKey.REPLACE_OLDEST)) {
+            generateLog("Player [" + p.getName() + "] reached " + maxPerPlayer + " deadchests : No Deadchest generated");
+            return false;
+        }
+
+        while (playerDeadChestAmount(p) >= maxPerPlayer && replaceOldestChest(p)) {
+            // A player over the limit after a configuration change may need more
+            // than one removal to get back under it.
+        }
+        return playerDeadChestAmount(p) < maxPerPlayer;
     }
 
     private boolean disallowedFluidOrRailOrMinecart(Player p, Location loc) {
@@ -209,92 +224,6 @@ public class PlayerDeathListener implements Listener {
 
         return false;
     }
-
-    /**
-     * Handles the bottom/top of the world and the "no air found" case (message & return).
-     * Returns a usable location or null if the location must be abandoned.
-     */
-    private Location adjustLocationForWorldBounds(World world, Location loc, Player p) {
-        int minHeight = computeMinHeight();
-
-        // Bottom of the world
-        if (loc.getY() < minHeight) {
-            loc.setY(world.getHighestBlockYAt((int) loc.getX(), (int) loc.getZ()) + 1);
-            if (loc.getY() < minHeight) loc.setY(minHeight);
-            return loc;
-        }
-
-        // Top of the world
-        if (loc.getBlockY() >= world.getMaxHeight()) {
-            int y = world.getMaxHeight() - 1;
-            loc.setY(y);
-
-            while (world.getBlockAt(loc).getType() != Material.AIR && y > 0) {
-                y--;
-                loc.setY(y);
-            }
-
-            if (y < 1) {
-                p.sendMessage(local.prefixed("death.not-generated"));
-                return null;
-            }
-            return loc;
-        }
-
-        // Standard case -> handled in adjustForDoorsAndSolids
-        return loc;
-    }
-
-    /**
-     * Handles doors/ladders/vines and vertical ascent until air is found if necessary.
-     * IMPORTANT: re-read the material type after a possible relocation to avoid using stale data.
-     */
-    private Location adjustForDoorsAndSolids(World world, Location loc) {
-        Material type = world.getBlockAt(loc).getType();
-
-        if (type == Material.DARK_OAK_DOOR ||
-                type == Material.ACACIA_DOOR ||
-                type == Material.BIRCH_DOOR ||
-                (!Utils.isBefore1_16() && type == Material.CRIMSON_DOOR) ||
-                type == Material.IRON_DOOR ||
-                type == Material.JUNGLE_DOOR ||
-                type == Material.OAK_DOOR ||
-                type == Material.SPRUCE_DOOR ||
-                (!Utils.isBefore1_16() && type == Material.WARPED_DOOR) ||
-                type == Material.VINE ||
-                type == Material.LADDER) {
-
-            Location tmpLoc = getFreeBlockAroundThisPlace(world, loc);
-            if (tmpLoc != null) {
-                loc = tmpLoc;
-                // Re-read the material at the new location to avoid stale checks
-                type = world.getBlockAt(loc).getType();
-            }
-        }
-
-        if (type != Material.AIR && type != Material.CAVE_AIR && type != Material.VOID_AIR && type != Material.WATER) {
-            while (world.getBlockAt(loc).getType() != Material.AIR &&
-                    loc.getY() < world.getMaxHeight()) {
-                loc.setY(loc.getY() + 1);
-            }
-        }
-        return loc;
-    }
-
-    /**
-     * Manages the surface: DIRT_PATH / FARMLAND / GRASS_PATH (depending on version).
-     */
-    private void adjustForGroundBlocks(World world, Location loc) {
-        Location groundLocation = loc.clone();
-        groundLocation.setY(groundLocation.getY() - 1);
-        if (isBefore1_17() && world.getBlockAt(groundLocation).getType() == Material.valueOf("GRASS_PATH")
-                || !isBefore1_17() && world.getBlockAt(groundLocation).getType() == Material.DIRT_PATH
-                || world.getBlockAt(groundLocation).getType() == Material.FARMLAND) {
-            loc.setY(loc.getY() + 1);
-        }
-    }
-
-
 
     private void sanitizeInventoryOnDeath(PlayerDeathEvent e, Player p) {
         // The order matters:
@@ -418,22 +347,6 @@ public class PlayerDeathListener implements Listener {
         );
         chestData.setHolographicStatusId(holoStatus == null ? null : holoStatus.getUniqueId());
         return chestData;
-    }
-
-    /**
-     * Returns a block free of any deadchest, or {@code null} when the death
-     * position and its surroundings are all taken.
-     */
-    private Block relocateIfAlreadyOccupied(World world, Block block) {
-        if (DeadChestLoader.getChestData(block.getLocation()) == null) {
-            return block;
-        }
-
-        final Location freeLocation = getFreeBlockAroundThisPlace(world, block.getLocation());
-        if (freeLocation == null || DeadChestLoader.getChestData(freeLocation) != null) {
-            return null;
-        }
-        return world.getBlockAt(freeLocation);
     }
 
     /**

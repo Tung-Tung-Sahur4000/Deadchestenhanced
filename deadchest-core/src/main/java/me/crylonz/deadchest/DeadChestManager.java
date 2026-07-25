@@ -439,6 +439,89 @@ public class DeadChestManager {
         }
     }
 
+    /**
+     * Frees one chest slot by removing the oldest chest of a player.
+     * <p>
+     * Used when {@code chest.replace-oldest} is enabled and the player reached
+     * {@code chest.max-per-player}: the new death replaces the oldest grave
+     * instead of not being stored at all. The content of the replaced chest
+     * follows the expiration rules, so it is dropped when expired chests drop.
+     *
+     * @param player player reaching the limit
+     * @return {@code true} when a slot was freed
+     */
+    public static boolean replaceOldestChest(Player player) {
+        final ChestData oldest = oldestChestOf(player);
+        if (oldest == null) {
+            return false;
+        }
+
+        // A chest waiting for a crash reconciliation may still belong to the
+        // player inventory, it must not be touched.
+        if (!oldest.isSettled() || !oldest.beginTransfer()) {
+            return false;
+        }
+
+        final Location location = oldest.getChestLocation();
+        final World world = location.getWorld();
+
+        if (shouldDropItemsWhenChestExpires() && world != null) {
+            final List<ItemStack> replacedContent = oldest.getInventory();
+            oldest.cleanInventory();
+            if (!ChestDataRepository.updateDurable(oldest)) {
+                oldest.setInventory(replacedContent);
+                oldest.abortTransfer();
+                return false;
+            }
+
+            DeadChestLoader.getSchedulerAdapter().executeAtLocation(location, () -> {
+                for (ItemStack itemStack : replacedContent) {
+                    if (itemStack != null) {
+                        world.dropItemNaturally(location, itemStack);
+                    }
+                }
+            });
+        }
+
+        // Detached immediately so the limit check that follows sees the free slot,
+        // then cleaned up in the world on the thread owning that position.
+        DeadChestLoader.getChestDataCache().detachChestData(oldest);
+        DeadChestLoader.getSchedulerAdapter().executeAtLocation(location, () -> {
+            oldest.removeArmorStand();
+            if (world != null) {
+                world.getBlockAt(location).setType(Material.AIR);
+            }
+        });
+
+        generateLog("Deadchest of [" + oldest.getPlayerName() + "] was replaced : owner reached "
+                + config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER) + " chests and " + ConfigKey.REPLACE_OLDEST + " is enabled");
+        return true;
+    }
+
+    /**
+     * @param player player to inspect
+     * @return oldest chest of the player, or {@code null} when they have none
+     */
+    public static ChestData oldestChestOf(Player player) {
+        if (player == null) {
+            return null;
+        }
+
+        final List<ChestData> chests = new ArrayList<>();
+        DeadChestLoader.getChestDataCache().getPlayerLinkedDeadChestData(player, chests::add);
+
+        ChestData oldest = null;
+        for (ChestData chest : chests) {
+            if (chest == null || chest.getChestDate() == null) {
+                continue;
+            }
+            if (oldest == null || chest.getChestDate().before(oldest.getChestDate())) {
+                oldest = chest;
+            }
+        }
+        return oldest;
+    }
+
     public static void removeDeadChest(ChestData chestData) {
         if (chestData == null) {
             return;

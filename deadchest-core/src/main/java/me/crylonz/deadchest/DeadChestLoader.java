@@ -2,6 +2,7 @@ package me.crylonz.deadchest;
 
 import me.crylonz.deadchest.commands.DCCommandExecutor;
 import me.crylonz.deadchest.commands.DCTabCompletion;
+import me.crylonz.deadchest.compass.GraveCompassService;
 import me.crylonz.deadchest.db.*;
 import me.crylonz.deadchest.deps.worldguard.WorldGuardSoftDependenciesChecker;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
@@ -54,6 +55,7 @@ public class DeadChestLoader {
     public static SQLExecutor sqlExecutor = new SQLExecutor();
     private SchedulerTaskHandle maintenanceTask;
     private SchedulerTaskHandle animationTask;
+    private SchedulerTaskHandle compassTask;
     private static SchedulerAdapter scheduler;
     private static Plugin schedulerPluginOwner;
 
@@ -146,6 +148,7 @@ public class DeadChestLoader {
     public void disable() {
         scheduler.cancelTask(maintenanceTask);
         scheduler.cancelTask(animationTask);
+        scheduler.cancelTask(compassTask);
 
         ChestDataRepository.saveAllAsync(getChestDataCache().getAllChestData().values());
         sqlExecutor.shutdown();
@@ -244,6 +247,19 @@ public class DeadChestLoader {
         config.register(ConfigKey.STORE_XP_PERCENTAGE.toString(), 100);
         config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH.toString(), false);
         config.register(ConfigKey.LOCALIZATION_LANGUAGE.toString(), "en");
+        config.register(ConfigKey.REPLACE_OLDEST.toString(), false);
+        config.register(ConfigKey.PLACEMENT_SAFE_LOCATION.toString(), true);
+        config.register(ConfigKey.PLACEMENT_GROUND.toString(), true);
+        config.register(ConfigKey.PLACEMENT_VOID.toString(), true);
+        config.register(ConfigKey.PLACEMENT_LAVA_TOP.toString(), true);
+        config.register(ConfigKey.PLACEMENT_LAVA_SMART.toString(), true);
+        config.register(ConfigKey.PLACEMENT_WATER_TOP.toString(), false);
+        config.register(ConfigKey.PLACEMENT_WATER_BOTTOM.toString(), true);
+        config.register(ConfigKey.PLACEMENT_SUFFOCATION.toString(), true);
+        config.register(ConfigKey.PLACEMENT_POWDER_SNOW.toString(), true);
+        config.register(ConfigKey.PLACEMENT_SEARCH_RADIUS.toString(), 6);
+        config.register(ConfigKey.RESPAWN_COMPASS.toString(), true);
+        config.register(ConfigKey.RESPAWN_COMPASS_UPDATE_SECONDS.toString(), 5);
         config.register(ConfigKey.INTEGRITY_PROTECTION_ENABLED.toString(), true);
         config.register(ConfigKey.INTEGRITY_FLUSH_PLAYER_DATA.toString(), true);
         config.register(ConfigKey.INTEGRITY_ON_ROLLBACK.toString(), "void");
@@ -321,6 +337,11 @@ public class DeadChestLoader {
     private void launchRepeatingTask() {
         maintenanceTask = scheduler.runGlobalRepeating(DeadChestLoader::handleEvent, 20L, 20L);
         animationTask = scheduler.runGlobalRepeating(DeadChestLoader::handleAnimationEvent, 20L, 4L);
+
+        // The compass follows the latest chest, refreshed on the interval the
+        // server owner configured rather than on every chest change.
+        final long compassInterval = GraveCompassService.updateIntervalTicks();
+        compassTask = scheduler.runGlobalRepeating(GraveCompassService::refreshAll, compassInterval, compassInterval);
     }
 
     public static void handleAnimationEvent() {

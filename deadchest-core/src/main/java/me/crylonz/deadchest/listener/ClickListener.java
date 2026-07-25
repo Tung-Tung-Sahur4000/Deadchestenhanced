@@ -4,6 +4,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.DeadchestPickUpEvent;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.compass.GraveCompassService;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.*;
@@ -275,6 +276,9 @@ public class ClickListener implements Listener {
         } else {
             DeadChestLoader.getChestDataCache().removeChestData(cd);
         }
+
+        // The compass points at the latest chest, and disappears with the last one.
+        GraveCompassService.refresh(player);
 
         playPickupAnimation(block);
         playPickupSound(block, player);

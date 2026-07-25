@@ -33,6 +33,7 @@ After any change, run `/dc reload`.
 | `chest.duration-seconds`      | integer | `300`                   | Duration of the private phase in seconds. `0` = infinite private phase.     |
 | `chest.indestructible`        | boolean | `true`                  | Protect chest block from destruction/explosions.                            |
 | `chest.max-per-player`        | integer | `15`                    | Max active chests per player. `0` = unlimited.                              |
+| `chest.replace-oldest`        | boolean | `false`                 | At the limit: replace the oldest chest (`true`) or create none (`false`). The replaced content follows the expiration drop setting. |
 | `chest.recovery-mode`         | string  | `inventory-then-ground` | `inventory-then-ground` or `ground-drop`.                                   |
 | `chest.block-type`            | string  | `chest`                 | `chest`, `player-head`, `barrel`, `shulker-box`, `ender-chest`.             |
 | `chest.drop-items-on-timeout` | boolean | `false`                 | Legacy one-phase timeout behavior when `chest.loot.enabled=false`: drop items (`true`) or remove contents (`false`). |
@@ -68,6 +69,55 @@ The timeout model is therefore:
 | Key                              | Type    | Default | Description                              |
 |----------------------------------|---------|---------|------------------------------------------|
 | `maintenance.cleanup-on-startup` | boolean | `false` | Remove all DeadChests on server startup. |
+
+### Respawn Compass
+
+| Key                              | Type    | Default | Description                                                                 |
+|----------------------------------|---------|---------|-----------------------------------------------------------------------------|
+| `respawn.compass`                | boolean | `true`  | Give a compass pointing at the latest DeadChest when a player respawns.     |
+| `respawn.compass-update-seconds` | integer | `5`     | How often the compass is retargeted. Applied at server start.               |
+
+The compass is a plugin item, not loot:
+
+- it always points at the player's most recent DeadChest, and is retargeted every
+  `compass-update-seconds`;
+- it cannot be dropped, and cannot be moved into a container;
+- it is never stored inside a DeadChest and never appears in the death drops;
+- it disappears as soon as the player has no DeadChest left.
+
+### Placement
+
+| Key                                   | Type    | Default | Description                                                                     |
+|---------------------------------------|---------|---------|---------------------------------------------------------------------------------|
+| `generation.placement.safe-location`  | boolean | `true`  | Only create chests where the owner may build (protection plugins are asked).     |
+| `generation.placement.ground`         | boolean | `true`  | A chest created in the air falls to the ground.                                  |
+| `generation.placement.void`           | boolean | `true`  | A death in the void uses the closest real block, or plain air when there is none.|
+| `generation.placement.lava-top`       | boolean | `true`  | A death in lava floats the chest to the lava surface.                            |
+| `generation.placement.lava-smart`     | boolean | `true`  | When the lava surface is covered, use the last block the entity stood on.        |
+| `generation.placement.water-top`      | boolean | `false` | Drowning floats the chest to the water surface.                                  |
+| `generation.placement.water-bottom`   | boolean | `true`  | Drowning sinks the chest to the bottom. Also applied when `ground` is enabled.   |
+| `generation.placement.suffocation`    | boolean | `true`  | Suffocating uses the last solid block, then above or below the column.           |
+| `generation.placement.powder-snow`    | boolean | `true`  | Dying in powder snow uses the last solid block, then the snow surface.           |
+| `generation.placement.search-radius`  | integer | `6`     | How far to look for a valid block when the resolved position cannot be used.     |
+
+These options never compete with each other, they form one chain:
+
+1. **The death context selects exactly one rule**, in this order:
+   `void` → `lava` → `water` → `powder-snow` → `suffocation` → `ground`.
+   A player who drowns is only handled by the water rules, a player who falls in
+   the void only by the void rule, and so on.
+2. **The position it returns is then validated**: clamped inside the world border
+   and the build height, and accepted only if the block is free, not already used
+   by another DeadChest, and buildable by the owner when `safe-location` is on.
+3. **If it is not valid, the closest usable block is searched**, starting straight
+   below the death position, then straight above, then in rings up to
+   `search-radius` blocks away.
+4. **If nothing valid exists**, no DeadChest is created and the items are dropped
+   by vanilla rather than being placed somewhere unreachable.
+
+Because of step 2, two entities dying on the same block always get two different
+DeadChests: the second one is moved to the closest free block instead of
+overwriting the first.
 
 ### Integrity (crash duplication protection)
 
