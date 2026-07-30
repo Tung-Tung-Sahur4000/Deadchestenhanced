@@ -94,19 +94,24 @@ of truth.
 
 Enforcement has two layers, and the order matters.
 
-The first one is the vanilla owner field of the item entity, written by `LockedDropService.applyNativeLock()`. Minecraft
-refuses to hand a dropped item to a player other than the one stored there, so the reservation holds even if no plugin
-listens. It is re-applied on every maintenance pass, on chunk load and after a restart, and it is dropped as soon as
+The first one is written on the item entity, where the server enforces it with no plugin involved:
+`LockedDropService.applyNativeLock()` sets the vanilla owner field, so Minecraft refuses to hand the drop to anybody
+else, and `refreshDespawnTimer()` marks the entity as living forever so the vanilla despawn timer can never fire. That
+timer is `item-despawn-rate` in `spigot.yml`, which servers routinely lower below the configured lifetime, so racing it
+with a periodic age reset was never safe. It is re-applied on every maintenance pass, on chunk load and after a restart, and it is dropped as soon as
 `vanilla-drop.owner-only-pickup` is turned off. **A protection that only exists in a listener is not a protection**: the
 lock lived in `LockedDropListener` alone until 4.30.0 and any plugin listening later could un-cancel it.
 
-The second one is `LockedDropListener`, which covers what the vanilla field does not: hopper pickup, mobs, vanilla
-despawn, and merges between two different deaths. Its four handlers run at `EventPriority.HIGHEST` so nothing can undo
+The second one is `LockedDropListener`, which covers what the entity fields do not: hopper pickup, mobs, merges between
+two different deaths, and the despawn of a drop the lifetime flag could not be set on. Its four handlers run at `EventPriority.HIGHEST` so nothing can undo
 them afterwards. Keep them there.
 
 The two layers interact in one place: `deadchest.dropPass` and `deadchest.chestPass`. The server applies the owner field
 **after** the pickup event, so letting the event through is not enough for a bypass holder. The listener calls
 `releaseNativeLock()` for them and the maintenance pass puts the lock back on the next second.
+
+Shutdown undoes the lifetime flag (`releaseDespawnProtection()`), because a drop marked as living forever would stay on
+the ground for good if DeadChest is removed before the server comes back. Startup marks them again.
 
 `LockedDropEntitiesListener` handles Paper's `EntitiesLoadEvent` and is registered only when that class exists, because
 Paper 1.17+ loads entities separately from their chunk.
@@ -183,7 +188,7 @@ interface on recent ones, which is why the inventories are read from the event i
 
 ### Testing
 
-MockBukkit plus Mockito, everything in `deadchest-core/src/test`. 268 tests today.
+MockBukkit plus Mockito, everything in `deadchest-core/src/test`. 274 tests today.
 
 Patterns used everywhere:
 
@@ -191,9 +196,18 @@ Patterns used everywhere:
 - `DeadChestConfig` is a Mockito mock, one `when(...)` per key the code under test reads;
 - `MockBukkit.unmock()` and the service `clearTracking()` / `resetSessionState()` helpers run in `@AfterEach`.
 
-Two MockBukkit limits worth knowing: `Entity#setTicksLived` is unimplemented (calls are caught and the affected test
-targets a Mockito mock instead), and a chunk is only "loaded" after an explicit `world.loadChunk(x, z)`, which matters
-for anything walking tracked drops.
+MockBukkit limits worth knowing:
+
+- **`UnimplementedOperationException` extends `TestAbortedException`.** A test that touches an unimplemented mock method
+  is reported as *skipped*, not failed, so it silently stops being coverage. Watch the skip count, not just the failure
+  count: `./gradlew :deadchest-core:test` then read `build/test-results/test/TEST-*.xml`. Seven skips are expected today,
+  all in the chest integrity and give-back paths.
+- `Entity#setTicksLived` and the whole `Item` owner and lifetime API (`setOwner`, `setUnlimitedLifetime`,
+  `setCanMobPickup`) are unimplemented. Production code catches that, which means an assertion on those calls would abort
+  instead of proving anything. Assert on a Mockito `mock(Item.class)`, or wrap the entity in a spy that implements them —
+  `LockedDropListenerTest#withEntityApi` does the second, and the spy shares the persistent data container of the entity
+  it wraps so the item left in the world stays tagged.
+- A chunk is only "loaded" after an explicit `world.loadChunk(x, z)`, which matters for anything walking tracked drops.
 
 ### CI and release
 

@@ -154,6 +154,7 @@ public class DeadChestLoader {
         scheduler.cancelTask(animationTask);
         scheduler.cancelTask(compassTask);
         scheduler.cancelTask(lockedDropTask);
+        LockedDropService.releaseDespawnProtection();
         LockedDropService.clearTracking();
 
         ChestDataRepository.saveAllAsync(getChestDataCache().getAllChestData().values());
