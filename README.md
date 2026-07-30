@@ -18,9 +18,12 @@ It is designed for Minecraft Java Edition servers and primarily targets Bukkit, 
 ## Features
 
 - Store a player's inventory in a chest on death instead of dropping items on the ground
+- Or keep vanilla death drops with `vanilla-drop`, reserved to the dead player and protected from despawn
 - Support modern Bukkit-based server software including Paper, Spigot, and Purpur
 - Provide admin tools to inspect, remove, repair, and give back DeadChests
 - Offer configurable behavior, localization, and optional integrations such as WorldGuard
+- Protect against item duplication caused by a server crash, for chests and for reserved drops
+- Point a respawn compass at the latest death, whichever mode is in use
 - Include an API and automated tests for safer maintenance and extensions
 
 ## Compatibility
@@ -82,3 +85,7 @@ documented [here](https://stellionix.github.io/Deadchest/latest/commands-and-per
 ## Contributing
 
 Development and contribution guidelines are available in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+New to the codebase? The [Architecture](https://stellionix.github.io/Deadchest/latest/architecture/) page
+([source](docs/architecture.md)) describes the module split, the two death paths, the crash protection handshake and the
+invariants to preserve when changing things.
