@@ -181,6 +181,7 @@ public final class LockedDropService {
 
         writeTags(item, ownerId, ownerName, creationTime, expirationTime);
         applyEntityProtections(item);
+        applyNativeLock(item, ownerId);
 
         trackedDrops.put(item.getUniqueId(),
                 new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime));
@@ -383,6 +384,7 @@ public final class LockedDropService {
         long expirationTime = getExpirationTime(item);
 
         applyEntityProtections(item);
+        applyNativeLock(item, ownerId);
         LockedDrop drop = new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime);
         drop.setIntegrity(getIntegritySequence(item), isIntegrityConfirmed(item));
         trackedDrops.put(item.getUniqueId(), drop);
@@ -683,6 +685,10 @@ public final class LockedDropService {
             return;
         }
 
+        // Re-applied on every pass : it restores the lock a bypass pickup lifted,
+        // and it follows a live change of 'vanilla-drop.owner-only-pickup'.
+        applyNativeLock(item, drop.getOwnerId());
+
         if (isDespawnProtectionEnabled()) {
             refreshDespawnTimer(item);
         }
@@ -740,6 +746,68 @@ public final class LockedDropService {
             item.setTicksLived(1);
         } catch (Throwable ignored) {
             // Not supported by this platform : the configured lifetime still applies.
+        }
+    }
+
+    /**
+     * Writes the reservation on the entity itself, where the server enforces it.
+     * <p>
+     * Minecraft refuses to hand a dropped item to a player other than the one
+     * stored on the entity, so the lock no longer depends on this plugin winning
+     * the {@code EntityPickupItemEvent} race against every other plugin installed
+     * on the server. The Bukkit listeners stay in place for the pickup paths the
+     * vanilla field does not cover, hoppers and mobs.
+     *
+     * @param item    reserved drop
+     * @param ownerId player the drop belongs to
+     */
+    static void applyNativeLock(Item item, UUID ownerId) {
+        if (item == null) {
+            return;
+        }
+
+        if (ownerId == null || !isOwnerOnlyPickup()) {
+            releaseNativeLock(item);
+            return;
+        }
+
+        try {
+            item.setOwner(ownerId);
+        } catch (Throwable ignored) {
+            // Server too old for the vanilla owner field : listeners still apply.
+        }
+
+        setCanMobPickup(item, false);
+    }
+
+    /**
+     * Lifts the vanilla lock so a player holding a bypass permission can take the
+     * drop. The maintenance tick puts it back on the next pass.
+     *
+     * @param item reserved drop
+     */
+    public static void releaseNativeLock(Item item) {
+        if (item == null) {
+            return;
+        }
+
+        try {
+            item.setOwner(null);
+        } catch (Throwable ignored) {
+            // Server too old for the vanilla owner field : nothing to lift.
+        }
+
+        setCanMobPickup(item, true);
+    }
+
+    /**
+     * Paper only : stops mobs from looting the drop without waiting for an event.
+     */
+    private static void setCanMobPickup(Item item, boolean allowed) {
+        try {
+            item.setCanMobPickup(allowed);
+        } catch (Throwable ignored) {
+            // Not a Paper server : the pickup listener still covers mobs.
         }
     }
 

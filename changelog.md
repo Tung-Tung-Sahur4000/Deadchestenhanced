@@ -14,6 +14,16 @@
   decides: the drops are confirmed when the player file kept the death, and removed as duplicates when a crash rolled it back
   while the items came back in the inventory. `integrity.crash-protection`, `integrity.flush-player-data` and
   `integrity.on-rollback` drive it exactly like they do for chests, and both sides now share one sequence allocator
+- Fixed the vanilla drop mode lock, which relied entirely on DeadChest winning the pickup event. The reservation is now
+  written on the item entity itself (`Item#setOwner`), where the server enforces it without any plugin involved, and it is
+  restored on every maintenance pass, on chunk load and after a restart. The pickup, despawn and merge handlers also moved
+  from `LOW` to `HIGHEST` priority, so a plugin listening later can no longer un-cancel them and quietly open the drops to
+  everybody. A player holding `deadchest.dropPass` or `deadchest.chestPass` still gets through: the native lock is lifted for
+  their pickup and put back afterwards
+- Fixed `vanilla-drop.protect-from-despawn: false` being ignored: the despawn handler cancelled the vanilla 5 minutes timer
+  even when the protection was turned off, so drops outlived the lifetime the option documents
+- Fixed mobs being blocked from reserved drops even with `vanilla-drop.owner-only-pickup: false`, which documents that
+  everybody can take them and which the hopper path already honored
 - Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the
   recent ones, so a click threw `IncompatibleClassChangeError` on one of the two. The inventories are now read from the event.
 - The Curse of Vanishing is now detected by enchantment key instead of the `Enchantment.VANISHING_CURSE` constant, which

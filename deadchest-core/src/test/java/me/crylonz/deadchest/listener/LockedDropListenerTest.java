@@ -7,12 +7,17 @@ import be.seeseemelk.mockbukkit.entity.PlayerMock;
 import be.seeseemelk.mockbukkit.inventory.InventoryMock;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Localization;
+import me.crylonz.deadchest.Permission;
 import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.Zombie;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ItemDespawnEvent;
 import org.bukkit.event.entity.ItemMergeEvent;
@@ -33,6 +38,7 @@ import java.util.logging.Logger;
 import static me.crylonz.deadchest.utils.ConfigKey.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -115,6 +121,95 @@ class LockedDropListenerTest {
     }
 
     @Test
+    void aReservedDropCarriesTheVanillaOwnerLock() {
+        // The server itself must refuse the pickup : the listener is only the
+        // second line of defense, it can be defeated by any plugin running later.
+        Item item = lockedDrop(owner.getUniqueId(), 0L);
+
+        assertEquals(owner.getUniqueId(), item.getOwner());
+    }
+
+    @Test
+    void theVanillaOwnerLockIsNotSetWhenPickupIsNotRestricted() {
+        when(cfg.getBoolean(VANILLA_DROP_OWNER_ONLY_PICKUP)).thenReturn(false);
+
+        assertNull(lockedDrop(owner.getUniqueId(), 0L).getOwner());
+    }
+
+    @Test
+    void aDropFoundBackAfterARestartGetsItsVanillaOwnerLockAgain() {
+        Item item = lockedDrop(owner.getUniqueId(), System.currentTimeMillis() + 300_000L);
+        item.setOwner(null);
+        LockedDropService.clearTracking();
+
+        LockedDropService.trackExistingDrop(item);
+
+        assertEquals(owner.getUniqueId(), item.getOwner());
+    }
+
+    @Test
+    void aBypassPlayerLiftsTheVanillaOwnerLock() {
+        // Without lifting it the server would still refuse the pickup right after
+        // the listener let the event through, and the permission would do nothing.
+        otherPlayer.addAttachment(DeadChestLoader.plugin, Permission.DROP_PASS.label, true);
+        Item item = lockedDrop(owner.getUniqueId(), 0L);
+        EntityPickupItemEvent event = new EntityPickupItemEvent(otherPlayer, item, 0);
+
+        listener.onEntityPickupItem(event);
+
+        assertFalse(event.isCancelled());
+        assertNull(item.getOwner());
+    }
+
+    @Test
+    void theOwnerPickupKeepsTheVanillaOwnerLockInPlace() {
+        Item item = lockedDrop(owner.getUniqueId(), 0L);
+        EntityPickupItemEvent event = new EntityPickupItemEvent(owner, item, 0);
+
+        listener.onEntityPickupItem(event);
+
+        assertFalse(event.isCancelled());
+        assertEquals(owner.getUniqueId(), item.getOwner());
+    }
+
+    @Test
+    void mobsCanLootAReservedDropWhenPickupIsNotRestricted() {
+        // 'owner-only-pickup' set to false documents that anybody can take the
+        // drops, which the mob branch used to ignore.
+        when(cfg.getBoolean(VANILLA_DROP_OWNER_ONLY_PICKUP)).thenReturn(false);
+        Zombie zombie = (Zombie) world.spawnEntity(new Location(world, 0, 65, 0), EntityType.ZOMBIE);
+        EntityPickupItemEvent event = new EntityPickupItemEvent(zombie, lockedDrop(owner.getUniqueId(), 0L), 0);
+
+        listener.onEntityPickupItem(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void mobsNeverLootAReservedDropWhenPickupIsRestricted() {
+        Zombie zombie = (Zombie) world.spawnEntity(new Location(world, 0, 65, 0), EntityType.ZOMBIE);
+        EntityPickupItemEvent event = new EntityPickupItemEvent(zombie, lockedDrop(owner.getUniqueId(), 0L), 0);
+
+        listener.onEntityPickupItem(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void theProtectionHandlersKeepTheLastWordOnTheEvent() throws NoSuchMethodException {
+        // A protection running early can be undone by any plugin listening after
+        // it, which silently turns the lock off on a server that has one.
+        assertEquals(EventPriority.HIGHEST, priorityOf("onEntityPickupItem", EntityPickupItemEvent.class));
+        assertEquals(EventPriority.HIGHEST, priorityOf("onInventoryPickupItem", InventoryPickupItemEvent.class));
+        assertEquals(EventPriority.HIGHEST, priorityOf("onItemDespawn", ItemDespawnEvent.class));
+        assertEquals(EventPriority.HIGHEST, priorityOf("onItemMerge", ItemMergeEvent.class));
+    }
+
+    private EventPriority priorityOf(String method, Class<?> eventType) throws NoSuchMethodException {
+        return LockedDropListener.class.getMethod(method, eventType).getAnnotation(EventHandler.class).priority();
+    }
+
+    @Test
     void regularDropPickupIsNeverBlocked() {
         EntityPickupItemEvent event = new EntityPickupItemEvent(otherPlayer, regularDrop(), 0);
 
@@ -151,6 +246,19 @@ class LockedDropListenerTest {
         listener.onItemDespawn(event);
 
         assertTrue(event.isCancelled(), "The vanilla 5 minutes timer must not remove a reserved drop");
+    }
+
+    @Test
+    void vanillaDespawnStillAppliesWhenTheProtectionIsTurnedOff() {
+        // 'protect-from-despawn' set to false documents that the vanilla timer
+        // keeps the last word, whichever of the two comes first.
+        when(cfg.getBoolean(VANILLA_DROP_PROTECT_FROM_DESPAWN)).thenReturn(false);
+        Item item = lockedDrop(owner.getUniqueId(), System.currentTimeMillis() + 300_000L);
+        ItemDespawnEvent event = new ItemDespawnEvent(item, item.getLocation());
+
+        listener.onItemDespawn(event);
+
+        assertFalse(event.isCancelled());
     }
 
     @Test

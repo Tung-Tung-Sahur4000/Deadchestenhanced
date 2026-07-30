@@ -64,9 +64,9 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 | Key                                  | Type    | Default | Description                                                                                                    |
 |--------------------------------------|---------|---------|----------------------------------------------------------------------------------------------------------------|
 | `vanilla-drop.enabled`               | boolean | `false` | Disable DeadChest generation and keep vanilla death drops instead.                                              |
-| `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too.                                   |
+| `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too. `false` leaves the drops open to everybody, mobs and hoppers included. |
 | `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
-| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla 5 minutes despawn timer so only `despawn-seconds` applies.                                   |
+| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla 5 minutes despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
 | `vanilla-drop.invulnerable`          | boolean | `false` | Make reserved drops immune to fire, lava, explosions and cactus.                                                |
 | `vanilla-drop.glow`                  | boolean | `false` | Add a glowing outline on reserved drops.                                                                        |
 
@@ -86,6 +86,7 @@ Notes:
 
 - The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
 - Reserved drops are tagged on the item entity, so a chunk unload or a server restart does not release them (requires Minecraft 1.14+, older servers only keep the lock until the next restart).
+- The reservation is written on the item entity itself, where Minecraft enforces it: the server refuses to hand a reserved drop to another player even if no plugin is listening. DeadChest also cancels the pickup events, which covers mobs and hoppers, and it does so last so another plugin cannot undo it.
 - Walking away is safe: an unloaded chunk saves its items to disk like vanilla, and the drops are found back when the chunk (or, on Paper 1.17+, its entity storage) is loaded again. Only the lifetime can remove them.
 - Bypass permissions: `deadchest.dropPass` and `deadchest.chestPass`.
 - Turning the mode off later does not release the drops already on the ground: they keep their lock and their timer.

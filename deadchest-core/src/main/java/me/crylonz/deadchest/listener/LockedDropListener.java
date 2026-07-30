@@ -21,23 +21,31 @@ import java.util.UUID;
  */
 public class LockedDropListener implements Listener {
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
         final Item item = event.getItem();
-        if (!LockedDropService.isLocked(item)) {
+        if (!LockedDropService.isLocked(item) || !LockedDropService.isOwnerOnlyPickup()) {
             return;
         }
 
-        if (event.getEntity() instanceof Player
-                && LockedDropService.canPickUp((Player) event.getEntity(), item)) {
-            return;
+        if (event.getEntity() instanceof Player) {
+            final Player player = (Player) event.getEntity();
+            if (LockedDropService.canPickUp(player, item)) {
+                if (!player.getUniqueId().equals(LockedDropService.getOwner(item))) {
+                    // The server itself refuses to hand the drop to anybody but its
+                    // owner, so a bypass permission only goes through once that
+                    // vanilla lock is lifted. The maintenance tick puts it back.
+                    LockedDropService.releaseNativeLock(item);
+                }
+                return;
+            }
         }
 
         // Mobs never loot a reserved drop, and other players only with a bypass permission.
         event.setCancelled(true);
     }
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryPickupItem(InventoryPickupItemEvent event) {
         if (LockedDropService.isLocked(event.getItem()) && LockedDropService.isOwnerOnlyPickup()) {
             // Hoppers and minecarts must not empty a reserved drop either.
@@ -45,15 +53,21 @@ public class LockedDropListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onItemDespawn(ItemDespawnEvent event) {
         final Item item = event.getEntity();
-        if (LockedDropService.isLocked(item) && !LockedDropService.isExpired(item, System.currentTimeMillis())) {
+        if (!LockedDropService.isLocked(item) || !LockedDropService.isDespawnProtectionEnabled()) {
+            // 'vanilla-drop.protect-from-despawn' set to false means the vanilla
+            // timer keeps the last word, whichever of the two comes first.
+            return;
+        }
+
+        if (!LockedDropService.isExpired(item, System.currentTimeMillis())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onItemMerge(ItemMergeEvent event) {
         final UUID sourceOwner = LockedDropService.getOwner(event.getEntity());
         final UUID targetOwner = LockedDropService.getOwner(event.getTarget());
