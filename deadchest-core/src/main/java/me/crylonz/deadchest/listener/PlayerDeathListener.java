@@ -8,6 +8,7 @@ import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.placement.GraveLocationResolver;
 import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
+import me.crylonz.deadchest.utils.RegistryCompat;
 import me.crylonz.deadchest.utils.Utils;
 import org.bukkit.*;
 import org.bukkit.block.Block;
@@ -266,7 +267,17 @@ public class PlayerDeathListener implements Listener {
     }
 
     private boolean hasVanishing(ItemStack item) {
-        return item != null && item.getEnchantments().containsKey(Enchantment.VANISHING_CURSE);
+        if (item == null) {
+            return false;
+        }
+
+        for (Enchantment enchantment : item.getEnchantments().keySet()) {
+            if (RegistryCompat.isVanishingCurse(enchantment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void removeExcludedItems(PlayerInventory inv) {

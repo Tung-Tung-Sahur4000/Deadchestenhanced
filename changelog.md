@@ -48,6 +48,12 @@
 - Added optional invulnerability and glowing outline for reserved drops (`vanilla-drop.invulnerable`, `vanilla-drop.glow`)
 - Added the `deadchest.dropPass` permission to bypass reserved drops
 - Kept the death coordinates message in vanilla drop mode
+- Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the
+  recent ones, so a click threw `IncompatibleClassChangeError` on one of the two. The inventories are now read from the event.
+- The Curse of Vanishing is now detected by enchantment key instead of the `Enchantment.VANISHING_CURSE` constant, which
+  moved to a registry
+- The barrel, shulker box and ender chest grave blocks are now resolved by name and fall back to a chest, instead of
+  constants that do not exist on every supported version
 
 ## Deadchest 4.28.0 - 2026-03-21
 
