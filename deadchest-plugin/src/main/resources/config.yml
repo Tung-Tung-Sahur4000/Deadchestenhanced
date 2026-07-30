@@ -53,6 +53,13 @@ chest:
   # Note: players with 'deadchest.infinityChest' create infinite chests.
   max-per-player: 15
 
+  # Behavior when a player reaches max-per-player.
+  # true  = the oldest DeadChest is replaced by the new one. Its content follows
+  #         the expiration rules below: dropped when drop-items-on-timeout is
+  #         true, removed otherwise.
+  # false = no DeadChest is created, the items are dropped by vanilla
+  replace-oldest: false
+
   # Item recovery mode when claiming a chest:
   # - inventory-then-ground = fill inventory first, drop overflow
   # - ground-drop           = drop everything on the ground
@@ -112,6 +119,47 @@ maintenance:
   # false = keep existing chests
   cleanup-on-startup: false
 
+integrity:
+  # Protection against item duplication caused by a server crash.
+  #
+  # The plugin database is written the moment a player dies, while the vanilla
+  # playerdata file is only written on autosave, on quit or on a clean shutdown.
+  # When the server is killed without shutting down (out of memory kill, kill -9,
+  # host crash), the deadchest survives while the player file rolls back to
+  # before the death: the player logs back in with the items still in the
+  # inventory AND finds a deadchest holding the same items.
+  #
+  # When enabled, each transfer between a player and a deadchest is stamped on
+  # both sides and only completed once the player data reached the disk. A
+  # transfer that a crash left half done is settled when the player reconnects.
+  #
+  # true  = detect and cancel crash duplicates (recommended)
+  # false = legacy behavior, no crash protection
+  crash-protection: true
+
+  # Write the player data to disk as soon as items move between a player and a
+  # deadchest, instead of waiting for the next autosave.
+  # This is what closes the duplication window instead of only detecting it.
+  # true  = save the player right after death, claim and quit (recommended)
+  # false = only detect duplicates, without forcing a save
+  flush-player-data: true
+
+  # What to do with a deadchest proven to be a crash duplicate, meaning the
+  # player reconnected with the items the chest holds still in the inventory.
+  # void = delete the duplicated chest (recommended)
+  # keep = keep the chest and only log a warning, for manual review
+  on-rollback: void
+
+respawn:
+  # Give a compass pointing at the latest DeadChest when a player respawns.
+  # The compass cannot be dropped, cannot be moved into a container, is never
+  # stored inside a DeadChest, and disappears once every chest was collected.
+  compass: true
+
+  # How often the compass is retargeted at the latest DeadChest, in seconds.
+  # Applied when the server starts, a restart is needed to change the interval.
+  compass-update-seconds: 5
+
 generation:
   # Allow generation in Creative mode.
   # false = no DeadChest if the player dies in Creative
@@ -132,6 +180,58 @@ generation:
   # Allow generation in The End worlds.
   # false = no items are kept in The End
   allow-in-end-worlds: true
+
+  # Where the DeadChest is placed once generation is allowed.
+  #
+  # These options are applied as a single chain, never against each other:
+  #
+  #   1. the death context selects ONE rule, in this order:
+  #        void > lava > water > powder-snow > suffocation > ground
+  #   2. the position it returns is then clamped inside the world border and the
+  #      build height, and accepted only if the block is free, not already taken
+  #      by another DeadChest, and buildable by the owner (safe-location)
+  #   3. otherwise the closest valid block is searched, starting below the death
+  #      position, then around it, up to search-radius blocks away
+  #   4. if nothing valid is found, no DeadChest is created and vanilla drops the
+  #      items instead of risking them
+  placement:
+    # Only create DeadChests where the owner is allowed to build.
+    # Works with protection plugins: the plugin asks them the same way a real
+    # block placement would.
+    safe-location: true
+
+    # If the entity dies in the air, the DeadChest falls to the ground.
+    ground: true
+
+    # If the entity dies in the void, the DeadChest goes to the closest real
+    # block, and to plain air when the column is empty.
+    void: true
+
+    # If the entity dies in lava, the DeadChest floats to the top of the lava.
+    lava-top: true
+
+    # If the lava surface is covered, place the DeadChest on the last block the
+    # entity stood on instead.
+    lava-smart: true
+
+    # If the entity drowns, the DeadChest floats to the surface of the water.
+    water-top: false
+
+    # If the entity drowns, the DeadChest sinks to the bottom of the water.
+    # When ground is enabled it sinks regardless, unless water-top is enabled.
+    water-bottom: true
+
+    # If the entity suffocates inside a block, the DeadChest goes to the last
+    # solid block it stood on, then above or below the suffocation column.
+    suffocation: true
+
+    # If the entity dies in powder snow, the DeadChest goes to the last solid
+    # block it stood on, then above the powder snow surface.
+    powder-snow: true
+
+    # How far the plugin looks for a valid block when the resolved position
+    # cannot be used. Blocks below are always tried first.
+    search-radius: 6
 
 messages:
   # Send DeadChest coordinates to the player on death.

@@ -41,7 +41,10 @@ public class ExplosionListener implements Listener {
 
         if (!blocklist.isEmpty()) {
             final InMemoryChestStore inMemoryChestStore = DeadChestLoader.getChestDataCache();
-            for (int i = 0; i < blocklist.size(); ++i) {
+            // Walked backwards: removing a protected chest from the blast list
+            // while going forward skipped the next block, so a second deadchest
+            // right next to the first one was blown up anyway.
+            for (int i = blocklist.size() - 1; i >= 0; i--) {
                 Block block = blocklist.get(i);
                 if (!isGraveBlock(block.getType())) {
                     continue;
@@ -50,7 +53,7 @@ public class ExplosionListener implements Listener {
 
                 if (chestData != null) {
                     if (config.getBoolean(ConfigKey.INDESTRUCTIBLE_CHEST)) {
-                        blocklist.remove(block);
+                        blocklist.remove(i);
                         generateLog("Deadchest of [" + chestData.getPlayerName() + "] was protected from explosion in " + Objects.requireNonNull(chestData.getChestLocation().getWorld()).getName());
                     } else {
                         inMemoryChestStore.removeChestData(chestData);

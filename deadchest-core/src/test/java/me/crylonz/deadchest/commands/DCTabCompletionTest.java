@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -46,6 +47,25 @@ class DCTabCompletionTest {
         assertTrue(suggestions.contains("removeall"));
         assertTrue(suggestions.contains("repair"));
         assertTrue(suggestions.contains("ignore"));
+    }
+
+    @Test
+    void suggestionsFollowTheMatchingPermission() {
+        // The remove and list checks used to be crossed: a player who could only
+        // list was offered remove, and the other way around.
+        PlayerMock remover = server.addPlayer("Remover");
+        remover.addAttachment(MockBukkit.createMockPlugin(), Permission.REMOVE_OWN.label, true);
+
+        List<String> removerSuggestions = tabCompletion.onTabComplete(remover, dcCommand, "dc", new String[]{""});
+        assertTrue(removerSuggestions.contains("remove"));
+        assertFalse(removerSuggestions.contains("list"));
+
+        PlayerMock lister = server.addPlayer("Lister");
+        lister.addAttachment(MockBukkit.createMockPlugin(), Permission.LIST_OWN.label, true);
+
+        List<String> listerSuggestions = tabCompletion.onTabComplete(lister, dcCommand, "dc", new String[]{""});
+        assertTrue(listerSuggestions.contains("list"));
+        assertFalse(listerSuggestions.contains("remove"));
     }
 
     @Test

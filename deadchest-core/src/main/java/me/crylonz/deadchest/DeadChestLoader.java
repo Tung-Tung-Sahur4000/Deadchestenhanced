@@ -2,8 +2,10 @@ package me.crylonz.deadchest;
 
 import me.crylonz.deadchest.commands.DCCommandExecutor;
 import me.crylonz.deadchest.commands.DCTabCompletion;
+import me.crylonz.deadchest.compass.GraveCompassService;
 import me.crylonz.deadchest.db.*;
 import me.crylonz.deadchest.deps.worldguard.WorldGuardSoftDependenciesChecker;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.legacy.OldChestData;
 import me.crylonz.deadchest.scheduler.SchedulerAdapter;
 import me.crylonz.deadchest.scheduler.SchedulerTaskHandle;
@@ -14,6 +16,7 @@ import me.crylonz.deadchest.utils.IgnoreItemRules;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
@@ -44,7 +47,6 @@ public class DeadChestLoader {
     public static Inventory ignoreList;
 
     public static boolean bstats = true;
-    public static boolean isChangesNeedToBeSave = false;
 
     public static DeadChestConfig config;
 
@@ -52,6 +54,7 @@ public class DeadChestLoader {
     public static SQLExecutor sqlExecutor = new SQLExecutor();
     private SchedulerTaskHandle maintenanceTask;
     private SchedulerTaskHandle animationTask;
+    private SchedulerTaskHandle compassTask;
     private static SchedulerAdapter scheduler;
     private static Plugin schedulerPluginOwner;
 
@@ -77,7 +80,10 @@ public class DeadChestLoader {
 
         ChestDataRepository.initTable(/* migrate old chestData.yml config */ OldChestData::migrateOldChestData);
 
-        ChestDataRepository.findAllAsync(chestData::setChestData, plugin);
+        ChestDataRepository.findAllAsync(loadedChests -> {
+            chestData.setChestData(loadedChests);
+            reconcileLoadedChests();
+        }, plugin);
 
         registerConfig();
         initializeConfig();
@@ -141,10 +147,33 @@ public class DeadChestLoader {
     public void disable() {
         scheduler.cancelTask(maintenanceTask);
         scheduler.cancelTask(animationTask);
+        scheduler.cancelTask(compassTask);
 
         ChestDataRepository.saveAllAsync(getChestDataCache().getAllChestData().values());
         sqlExecutor.shutdown();
         db.close();
+    }
+
+    /**
+     * Settles the chests restored from the database.
+     * <p>
+     * A chest that is still staged after a restart is the signature of a server
+     * that went down without saving: it is compared with the player file of its
+     * owner, immediately for the players already connected, and on login for the
+     * others.
+     */
+    private static void reconcileLoadedChests() {
+        final int unsettled = ChestIntegrityService.countUnsettled();
+        if (unsettled == 0) {
+            return;
+        }
+
+        log.warning("[DeadChest] " + unsettled + " deadchest(s) were left in an unconfirmed state by a server crash. "
+                + "They stay locked until their owner reconnects and the plugin can tell a duplicate from a legitimate chest.");
+
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            ChestIntegrityService.reconcile(onlinePlayer);
+        }
     }
 
     public static InMemoryChestStore getChestDataCache() {
@@ -217,6 +246,22 @@ public class DeadChestLoader {
         config.register(ConfigKey.STORE_XP_PERCENTAGE.toString(), 100);
         config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH.toString(), false);
         config.register(ConfigKey.LOCALIZATION_LANGUAGE.toString(), "en");
+        config.register(ConfigKey.REPLACE_OLDEST.toString(), false);
+        config.register(ConfigKey.PLACEMENT_SAFE_LOCATION.toString(), true);
+        config.register(ConfigKey.PLACEMENT_GROUND.toString(), true);
+        config.register(ConfigKey.PLACEMENT_VOID.toString(), true);
+        config.register(ConfigKey.PLACEMENT_LAVA_TOP.toString(), true);
+        config.register(ConfigKey.PLACEMENT_LAVA_SMART.toString(), true);
+        config.register(ConfigKey.PLACEMENT_WATER_TOP.toString(), false);
+        config.register(ConfigKey.PLACEMENT_WATER_BOTTOM.toString(), true);
+        config.register(ConfigKey.PLACEMENT_SUFFOCATION.toString(), true);
+        config.register(ConfigKey.PLACEMENT_POWDER_SNOW.toString(), true);
+        config.register(ConfigKey.PLACEMENT_SEARCH_RADIUS.toString(), 6);
+        config.register(ConfigKey.RESPAWN_COMPASS.toString(), true);
+        config.register(ConfigKey.RESPAWN_COMPASS_UPDATE_SECONDS.toString(), 5);
+        config.register(ConfigKey.INTEGRITY_PROTECTION_ENABLED.toString(), true);
+        config.register(ConfigKey.INTEGRITY_FLUSH_PLAYER_DATA.toString(), true);
+        config.register(ConfigKey.INTEGRITY_ON_ROLLBACK.toString(), "void");
     }
 
     private void initializeConfig() {
@@ -291,6 +336,11 @@ public class DeadChestLoader {
     private void launchRepeatingTask() {
         maintenanceTask = scheduler.runGlobalRepeating(DeadChestLoader::handleEvent, 20L, 20L);
         animationTask = scheduler.runGlobalRepeating(DeadChestLoader::handleAnimationEvent, 20L, 4L);
+
+        // The compass follows the latest chest, refreshed on the interval the
+        // server owner configured rather than on every chest change.
+        final long compassInterval = GraveCompassService.updateIntervalTicks();
+        compassTask = scheduler.runGlobalRepeating(GraveCompassService::refreshAll, compassInterval, compassInterval);
     }
 
     public static void handleAnimationEvent() {
@@ -314,10 +364,6 @@ public class DeadChestLoader {
     public static EffectAnimationStyle getConfiguredAnimationStyle() {
         EffectAnimationStyle style = EffectAnimationStyle.fromInput(config.getString(ConfigKey.EFFECT_ANIMATION_STYLE));
         return style == null ? EffectAnimationStyle.SOUL : style;
-    }
-
-    public DeadChestConfig getDataConfig() {
-        return config;
     }
 
 }

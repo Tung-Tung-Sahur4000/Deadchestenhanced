@@ -5,6 +5,7 @@ import be.seeseemelk.mockbukkit.ServerMock;
 import be.seeseemelk.mockbukkit.WorldMock;
 import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -395,6 +396,99 @@ class SQLiteRepositoryTest {
         assertEquals("chest_x", columns.get(1));
         assertEquals("chest_y", columns.get(2));
         assertEquals("chest_z", columns.get(3));
+    }
+
+    @Test
+    void schemaInitializationCompletesEveryStep() throws Exception {
+        // The schema migration used to close the shared connection, which killed
+        // the statements that follow it: the indexes were missing and the legacy
+        // migration callback never ran.
+        final boolean[] callbackRan = new boolean[1];
+        ChestDataRepository.initTable(() -> callbackRan[0] = true);
+        awaitAsyncDb();
+
+        assertTrue(callbackRan[0], "The post-creation callback must run");
+
+        List<String> indexes = new ArrayList<>();
+        try (Statement st = DeadChestLoader.db.connection().createStatement();
+             ResultSet rs = st.executeQuery("SELECT name FROM sqlite_master WHERE type='index'")) {
+            while (rs.next()) {
+                indexes.add(rs.getString("name"));
+            }
+        }
+
+        assertTrue(indexes.contains("idx_chest_player"), "player index missing : " + indexes);
+        assertTrue(indexes.contains("idx_chest_location"), "location index missing : " + indexes);
+        assertTrue(indexes.contains("idx_chest_death_id"), "death id index missing : " + indexes);
+    }
+
+    @Test
+    void legacyTableGainsIntegrityColumnsAndKeepsItsChestsUsable() throws Exception {
+        ChestData legacyChest = chestDataAt(70, Material.DIAMOND, 1, false, 3);
+        ChestDataRepository.save(legacyChest);
+
+        stripIntegrityColumns();
+
+        // Restarting the plugin on the old schema must migrate it in place.
+        ChestDataRepository.initTable(() -> {
+        });
+        awaitAsyncDb();
+
+        List<ChestData> loaded = ChestDataRepository.findAll();
+        assertEquals(1, loaded.size());
+        assertChestEquivalent(legacyChest, loaded.get(0));
+        assertEquals(ChestIntegrityState.CONFIRMED, loaded.get(0).getIntegrityState(),
+                "Chests written before the handshake existed are legitimate, not crash duplicates");
+        assertEquals(0L, loaded.get(0).getIntegritySequence());
+
+        // A row migrated without a death id is still identified by its position.
+        ChestDataRepository.remove(loaded.get(0));
+        assertTrue(ChestDataRepository.findAll().isEmpty());
+    }
+
+    @Test
+    void integrityStateIsStoredAndUpdatedOnItsOwn() {
+        ChestData chest = chestDataAt(71, Material.EMERALD, 1, false, 0);
+        UUID owner = UUID.randomUUID();
+        chest.setIntegrityState(ChestIntegrityState.PENDING);
+        chest.setIntegrityOwner(owner);
+        chest.setIntegritySequence(42L);
+        ChestDataRepository.save(chest);
+
+        chest.setIntegrityState(ChestIntegrityState.CONFIRMED);
+        ChestDataRepository.saveIntegrity(chest);
+
+        List<ChestData> loaded = ChestDataRepository.findAll();
+        assertEquals(1, loaded.size());
+        assertEquals(ChestIntegrityState.CONFIRMED, loaded.get(0).getIntegrityState());
+        assertEquals(owner, loaded.get(0).getIntegrityOwner());
+        assertEquals(42L, loaded.get(0).getIntegritySequence());
+        assertEquals(chest.getDeathId(), loaded.get(0).getDeathId());
+    }
+
+    @Test
+    void deletingAChestDoesNotTouchAnotherOneOnTheSameBlock() {
+        ChestData stored = chestDataAt(72, Material.DIAMOND, 1, false, 0);
+        ChestData otherDeath = chestDataAt(72, Material.EMERALD, 1, false, 0);
+        assertFalse(ChestDataRepository.save(stored));
+
+        // Same owner, same position, different death: deleting one used to delete
+        // whichever row the position matched first.
+        ChestDataRepository.remove(otherDeath);
+
+        List<ChestData> loaded = ChestDataRepository.findAll();
+        assertEquals(1, loaded.size());
+        assertEquals(stored.getDeathId(), loaded.get(0).getDeathId());
+    }
+
+    private void stripIntegrityColumns() throws Exception {
+        try (Statement st = DeadChestLoader.db.connection().createStatement()) {
+            st.executeUpdate("DROP INDEX IF EXISTS idx_chest_death_id");
+            st.executeUpdate("ALTER TABLE chest_data DROP COLUMN death_id");
+            st.executeUpdate("ALTER TABLE chest_data DROP COLUMN integrity_state");
+            st.executeUpdate("ALTER TABLE chest_data DROP COLUMN integrity_seq");
+            st.executeUpdate("ALTER TABLE chest_data DROP COLUMN integrity_owner");
+        }
     }
 
     private void awaitAsyncDb() {

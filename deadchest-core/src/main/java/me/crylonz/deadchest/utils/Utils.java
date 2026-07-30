@@ -87,14 +87,6 @@ public class Utils {
         return graveBlocks.contains(material);
     }
 
-    public static int computeMinHeight() {
-        if (isBefore1_18()) {
-            return 1;
-        } else {
-            return -64;
-        }
-    }
-
     public static boolean checkTheEndGeneration(Entity player) {
         return player.getWorld().getEnvironment().equals(World.Environment.THE_END) &&
                 !config.getBoolean(ConfigKey.GENERATE_IN_THE_END);

@@ -3,6 +3,9 @@ package me.crylonz.deadchest.listener;
 import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.db.ChestDataRepository;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import me.crylonz.deadchest.placement.GraveLocationResolver;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.IgnoreItemRules;
 import me.crylonz.deadchest.utils.Utils;
@@ -26,6 +29,7 @@ import java.util.Objects;
 
 import static me.crylonz.deadchest.DeadChestLoader.*;
 import static me.crylonz.deadchest.DeadChestManager.playerDeadChestAmount;
+import static me.crylonz.deadchest.DeadChestManager.replaceOldestChest;
 import static me.crylonz.deadchest.utils.ConfigKey.GENERATE_DEADCHEST_IN_CREATIVE;
 import static me.crylonz.deadchest.utils.ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH;
 import static me.crylonz.deadchest.utils.ExpUtils.getTotalExperienceToStore;
@@ -68,14 +72,18 @@ public class PlayerDeathListener implements Listener {
 
         if (disallowedFluidOrRailOrMinecart(player, location)) return;
 
-        // 4) Position adjustments (world bottom/top, doors, solids, fragile surface)
-        location = adjustLocationForWorldBounds(world, location, player);
-        if (location == null) return; // keep original behavior (message + return)
+        // 4) Where the grave goes: one chained resolution handling the void, lava,
+        // water, powder snow, suffocation and free fall, then the world border,
+        // the build height, the protected regions and the blocks already taken by
+        // another grave.
+        final Location graveLocation = GraveLocationResolver.resolve(player, location);
+        if (graveLocation == null) {
+            generateLog("Player [" + player.getName() + "] died where no deadchest can be placed : No Deadchest generated");
+            player.sendMessage(local.prefixed("death.not-generated"));
+            return;
+        }
 
-        location = adjustForDoorsAndSolids(world, location);
-        adjustForGroundBlocks(world, location);
-
-        Block block = world.getBlockAt(location);
+        Block block = world.getBlockAt(graveLocation);
 
         // 5) Inventory cleaning (vanishing, excluded/ignored items, durability, XP)
         sanitizeInventoryOnDeath(event, player);
@@ -98,7 +106,16 @@ public class PlayerDeathListener implements Listener {
         ArmorStand[] holos = createHolograms(block, event.getEntity().getDisplayName());
 
         // 8) Building & saving the DeadChest (ChestData), then restoring player inventory
-        buildAndSaveChestData(player, block, holos[HOLO_TIME], holos[HOLO_NAME], holos[HOLO_STATUS], itemsToStore);
+        if (!buildAndSaveChestData(player, block, holos[HOLO_TIME], holos[HOLO_NAME], holos[HOLO_STATUS], itemsToStore)) {
+            // The chest is not on disk. Clearing the inventory now would destroy
+            // the items, so the generation is rolled back and vanilla keeps the
+            // drops it already holds.
+            rollbackFailedGeneration(block, holos);
+            log.severe("[DeadChest] Deadchest of [" + player.getName() + "] could not be stored, items left to vanilla drops");
+            generateLog("Deadchest of [" + player.getName() + "] could not be stored : generation cancelled, items dropped by vanilla");
+            player.sendMessage(local.prefixed("death.not-generated"));
+            return;
+        }
 
         // 9) Clean up drops & remove remaining items on player side
         clearEventDropsAndPlayerInventory(event, player);
@@ -147,8 +164,27 @@ public class PlayerDeathListener implements Listener {
     }
 
     private boolean underPerPlayerLimit(Player p) {
-        return (playerDeadChestAmount(p) < config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER) ||
-                config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER) == 0) && p.getMetadata("NPC").isEmpty();
+        if (!p.getMetadata("NPC").isEmpty()) {
+            return false;
+        }
+
+        final int maxPerPlayer = config.getInt(ConfigKey.MAX_DEAD_CHEST_PER_PLAYER);
+        if (maxPerPlayer == 0 || playerDeadChestAmount(p) < maxPerPlayer) {
+            return true;
+        }
+
+        // Limit reached: either the death is not stored, or the oldest grave makes
+        // room for the new one.
+        if (!config.getBoolean(ConfigKey.REPLACE_OLDEST)) {
+            generateLog("Player [" + p.getName() + "] reached " + maxPerPlayer + " deadchests : No Deadchest generated");
+            return false;
+        }
+
+        while (playerDeadChestAmount(p) >= maxPerPlayer && replaceOldestChest(p)) {
+            // A player over the limit after a configuration change may need more
+            // than one removal to get back under it.
+        }
+        return playerDeadChestAmount(p) < maxPerPlayer;
     }
 
     private boolean disallowedFluidOrRailOrMinecart(Player p, Location loc) {
@@ -188,92 +224,6 @@ public class PlayerDeathListener implements Listener {
 
         return false;
     }
-
-    /**
-     * Handles the bottom/top of the world and the "no air found" case (message & return).
-     * Returns a usable location or null if the location must be abandoned.
-     */
-    private Location adjustLocationForWorldBounds(World world, Location loc, Player p) {
-        int minHeight = computeMinHeight();
-
-        // Bottom of the world
-        if (loc.getY() < minHeight) {
-            loc.setY(world.getHighestBlockYAt((int) loc.getX(), (int) loc.getZ()) + 1);
-            if (loc.getY() < minHeight) loc.setY(minHeight);
-            return loc;
-        }
-
-        // Top of the world
-        if (loc.getBlockY() >= world.getMaxHeight()) {
-            int y = world.getMaxHeight() - 1;
-            loc.setY(y);
-
-            while (world.getBlockAt(loc).getType() != Material.AIR && y > 0) {
-                y--;
-                loc.setY(y);
-            }
-
-            if (y < 1) {
-                p.sendMessage(local.prefixed("death.not-generated"));
-                return null;
-            }
-            return loc;
-        }
-
-        // Standard case -> handled in adjustForDoorsAndSolids
-        return loc;
-    }
-
-    /**
-     * Handles doors/ladders/vines and vertical ascent until air is found if necessary.
-     * IMPORTANT: re-read the material type after a possible relocation to avoid using stale data.
-     */
-    private Location adjustForDoorsAndSolids(World world, Location loc) {
-        Material type = world.getBlockAt(loc).getType();
-
-        if (type == Material.DARK_OAK_DOOR ||
-                type == Material.ACACIA_DOOR ||
-                type == Material.BIRCH_DOOR ||
-                (!Utils.isBefore1_16() && type == Material.CRIMSON_DOOR) ||
-                type == Material.IRON_DOOR ||
-                type == Material.JUNGLE_DOOR ||
-                type == Material.OAK_DOOR ||
-                type == Material.SPRUCE_DOOR ||
-                (!Utils.isBefore1_16() && type == Material.WARPED_DOOR) ||
-                type == Material.VINE ||
-                type == Material.LADDER) {
-
-            Location tmpLoc = getFreeBlockAroundThisPlace(world, loc);
-            if (tmpLoc != null) {
-                loc = tmpLoc;
-                // Re-read the material at the new location to avoid stale checks
-                type = world.getBlockAt(loc).getType();
-            }
-        }
-
-        if (type != Material.AIR && type != Material.CAVE_AIR && type != Material.VOID_AIR && type != Material.WATER) {
-            while (world.getBlockAt(loc).getType() != Material.AIR &&
-                    loc.getY() < world.getMaxHeight()) {
-                loc.setY(loc.getY() + 1);
-            }
-        }
-        return loc;
-    }
-
-    /**
-     * Manages the surface: DIRT_PATH / FARMLAND / GRASS_PATH (depending on version).
-     */
-    private void adjustForGroundBlocks(World world, Location loc) {
-        Location groundLocation = loc.clone();
-        groundLocation.setY(groundLocation.getY() - 1);
-        if (isBefore1_17() && world.getBlockAt(groundLocation).getType() == Material.valueOf("GRASS_PATH")
-                || !isBefore1_17() && world.getBlockAt(groundLocation).getType() == Material.DIRT_PATH
-                || world.getBlockAt(groundLocation).getType() == Material.FARMLAND) {
-            loc.setY(loc.getY() + 1);
-        }
-    }
-
-
 
     private void sanitizeInventoryOnDeath(PlayerDeathEvent e, Player p) {
         // The order matters:
@@ -354,12 +304,35 @@ public class PlayerDeathListener implements Listener {
         return itemsToStore;
     }
 
-    private void buildAndSaveChestData(Player p, Block b, ArmorStand holoTime, ArmorStand holoName, ArmorStand holoStatus, ItemStack[] itemsToStore) {
+    /**
+     * Builds the chest, stamps the death on the player and stores everything
+     * before the caller is allowed to clear the inventory.
+     *
+     * @return {@code true} when the chest is durably stored
+     */
+    private boolean buildAndSaveChestData(Player p, Block b, ArmorStand holoTime, ArmorStand holoName, ArmorStand holoStatus, ItemStack[] itemsToStore) {
         PlayerInventory inv = p.getInventory();
         ItemStack[] snapshot = inv.getContents();
         inv.setContents(itemsToStore);
-        DeadChestLoader.getChestDataCache().addChestData(cerateChestData(p, b, holoTime, holoName, holoStatus, inv));
+        final ChestData chestData = cerateChestData(p, b, holoTime, holoName, holoStatus, inv);
         inv.setContents(snapshot);
+
+        // Stamp the player before anything is written: the stamp travels inside
+        // the same playerdata file as the inventory, so it is the proof that the
+        // death survived on the player side too.
+        ChestIntegrityService.beginDeath(p, chestData);
+
+        // Wait for the insert. An asynchronous write here can be lost by a hard
+        // kill happening in the same tick, and the inventory is cleared right
+        // after this call.
+        if (!ChestDataRepository.saveDurable(chestData)) {
+            generateLog("Could not store deadchest of [" + p.getName() + "] in " + b.getWorld().getName() +
+                    " at X:" + b.getX() + " Y:" + b.getY() + " Z:" + b.getZ());
+            return false;
+        }
+
+        DeadChestLoader.getChestDataCache().addChestData(chestData);
+        return true;
     }
 
     private static ChestData cerateChestData(final Player p, final Block b, final ArmorStand holoTime, final ArmorStand holoName, final ArmorStand holoStatus, final PlayerInventory inv) {
@@ -373,13 +346,22 @@ public class PlayerDeathListener implements Listener {
                 getTotalExperienceToStore(p)
         );
         chestData.setHolographicStatusId(holoStatus == null ? null : holoStatus.getUniqueId());
-        chestData.save(containsChestOnLoc -> {
-            if (containsChestOnLoc){
-                generateLog("Could not generate deadchest, as dublicate exist in database on same location [" + p.getName() + "] in " + b.getWorld().getName() +
-                        " at X:" + b.getX() + " Y:" + b.getY() + " Z:" + b.getZ());
-            }
-        });
         return chestData;
+    }
+
+    /**
+     * Undoes a generation that could not be persisted, so the world does not
+     * keep a chest the plugin does not know about.
+     */
+    private void rollbackFailedGeneration(Block block, ArmorStand[] holos) {
+        if (holos != null) {
+            for (ArmorStand holo : holos) {
+                if (holo != null) {
+                    holo.remove();
+                }
+            }
+        }
+        block.setType(Material.AIR);
     }
 
     private void clearEventDropsAndPlayerInventory(PlayerDeathEvent e, Player p) {

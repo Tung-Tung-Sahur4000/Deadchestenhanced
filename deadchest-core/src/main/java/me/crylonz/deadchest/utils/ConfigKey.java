@@ -56,7 +56,23 @@ public enum ConfigKey {
     PICKUP_SOUND_NAME("visuals.sound.pickup.name"),
     PICKUP_SOUND_VOLUME("visuals.sound.pickup.volume"),
     PICKUP_SOUND_PITCH("visuals.sound.pickup.pitch"),
-    LOCALIZATION_LANGUAGE("localization.language", "language");
+    LOCALIZATION_LANGUAGE("localization.language", "language"),
+    REPLACE_OLDEST("chest.replace-oldest"),
+    PLACEMENT_SAFE_LOCATION("generation.placement.safe-location"),
+    PLACEMENT_GROUND("generation.placement.ground"),
+    PLACEMENT_VOID("generation.placement.void"),
+    PLACEMENT_LAVA_TOP("generation.placement.lava-top"),
+    PLACEMENT_LAVA_SMART("generation.placement.lava-smart"),
+    PLACEMENT_WATER_TOP("generation.placement.water-top"),
+    PLACEMENT_WATER_BOTTOM("generation.placement.water-bottom"),
+    PLACEMENT_SUFFOCATION("generation.placement.suffocation"),
+    PLACEMENT_POWDER_SNOW("generation.placement.powder-snow"),
+    PLACEMENT_SEARCH_RADIUS("generation.placement.search-radius"),
+    RESPAWN_COMPASS("respawn.compass"),
+    RESPAWN_COMPASS_UPDATE_SECONDS("respawn.compass-update-seconds"),
+    INTEGRITY_PROTECTION_ENABLED("integrity.crash-protection"),
+    INTEGRITY_FLUSH_PLAYER_DATA("integrity.flush-player-data"),
+    INTEGRITY_ON_ROLLBACK("integrity.on-rollback");
 
     private static final Map<String, ConfigKey> BY_CANONICAL = new HashMap<>();
 

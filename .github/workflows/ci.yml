@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,3 +34,31 @@ jobs:
 
       - name: Build and run tests
         run: ./gradlew build --no-daemon
+
+      - name: Build plugin jar
+        run: ./gradlew :deadchest-plugin:shadowJar --no-daemon
+
+      - name: Read plugin version
+        id: version
+        run: echo "version=$(./gradlew -q printVersion --no-daemon | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload plugin jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: dead-chest-${{ steps.version.outputs.version }}-${{ github.sha }}
+          # Only the shaded jar: the plain one has neither the core classes nor
+          # the relocated bstats, so it is not a usable plugin.
+          path: deadchest-plugin/build/libs/dead-chest-*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.sha }}
+          path: |
+            deadchest-core/build/reports/tests/test
+            deadchest-core/build/test-results/test
+          if-no-files-found: ignore
+          retention-days: 14

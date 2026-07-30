@@ -7,6 +7,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Localization;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.TestDatabase;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
@@ -29,6 +30,9 @@ public class DCCommandRegistrationServiceTest {
     @BeforeEach
     public void setUp() {
         server = MockBukkit.mock();
+        DeadChestLoader.plugin = MockBukkit.createMockPlugin();
+        DeadChestLoader.log = java.util.logging.Logger.getLogger("DCCommandRegistrationServiceTest");
+        TestDatabase.start(DeadChestLoader.plugin);
         Localization localization = new Localization();
         Map<String, Object> values = new HashMap<>();
         values.put("common.prefix", "[DeadChest] ");
@@ -41,6 +45,7 @@ public class DCCommandRegistrationServiceTest {
 
     @AfterEach
     public void tearDown() {
+        TestDatabase.stop();
         MockBukkit.unmock();
     }
 

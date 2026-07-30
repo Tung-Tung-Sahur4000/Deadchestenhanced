@@ -69,6 +69,34 @@ class PistonListenerTest {
     }
 
     @Test
+    void testPistonCancelledWhenGraveIsBehindAnotherHead() {
+        // The loop used to return on the first untracked head, leaving the graves
+        // further down the pushed line unprotected.
+        Block piston = new BlockMock(Material.PISTON);
+        World world = server.addSimpleWorld("world");
+
+        Location plainHeadLoc = new Location(world, 20, 64, 20);
+        Location graveLoc = new Location(world, 21, 64, 20);
+
+        BlockMock plainHead = new BlockMock(Material.PLAYER_HEAD, plainHeadLoc);
+        BlockMock graveHead = new BlockMock(Material.PLAYER_HEAD, graveLoc);
+
+        ChestData cd = mock(ChestData.class);
+        when(cd.getChestLocation()).thenReturn(graveLoc);
+        deadChest.addChestData(cd);
+
+        List<Block> moved = new ArrayList<>();
+        moved.add(plainHead);
+        moved.add(graveHead);
+
+        BlockPistonExtendEvent event = new BlockPistonExtendEvent(piston, moved, BlockFace.NORTH);
+
+        listener.onBlockPistonExtendEvent(event);
+
+        assertTrue(event.isCancelled(), "A deadchest behind another head must still be protected");
+    }
+
+    @Test
     void testPistonNotCancelledWhenPushingOtherBlock() {
         Block piston = new BlockMock(Material.PISTON);
         Block dirt = new BlockMock(Material.DIRT);

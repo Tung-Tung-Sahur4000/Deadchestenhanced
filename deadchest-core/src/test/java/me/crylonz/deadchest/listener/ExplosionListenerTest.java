@@ -61,6 +61,30 @@ class ExplosionListenerTest {
     }
 
     @Test
+    void testEntityExplosion_ProtectsEveryChestOfTheBlast() {
+        // Removing a chest from the blast list while walking it forward skipped
+        // the next block, so a second grave right next to the first was blown up.
+        BlockMock firstChest = world.getBlockAt(5, 64, 5);
+        BlockMock secondChest = world.getBlockAt(6, 64, 5);
+        firstChest.setType(Material.CHEST);
+        secondChest.setType(Material.CHEST);
+        createMockChestAt(firstChest);
+        createMockChestAt(secondChest);
+
+        when(DeadChestLoader.config.getBoolean(ConfigKey.INDESTRUCTIBLE_CHEST)).thenReturn(true);
+
+        Creeper creeper = (Creeper) world.spawnEntity(firstChest.getLocation(), EntityType.CREEPER);
+        List<org.bukkit.block.Block> explodedBlocks = new ArrayList<>();
+        explodedBlocks.add(firstChest);
+        explodedBlocks.add(secondChest);
+
+        EntityExplodeEvent event = new EntityExplodeEvent(creeper, firstChest.getLocation(), explodedBlocks, 1.0f);
+        listener.onEntityExplodeEvent(event);
+
+        assertTrue(event.blockList().isEmpty(), "Both deadchests must survive the explosion");
+    }
+
+    @Test
     void testEntityExplosion_IndestructibleChest() {
         BlockMock chestBlock = world.getBlockAt(0, 64, 0);
         chestBlock.setType(Material.CHEST);

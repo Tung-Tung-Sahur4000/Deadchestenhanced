@@ -1,6 +1,7 @@
 package me.crylonz.deadchest;
 
 import me.crylonz.deadchest.db.ChestDataRepository;
+import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import org.bukkit.Location;
 import org.bukkit.configuration.serialization.SerializableAs;
 import org.bukkit.entity.ArmorStand;
@@ -11,6 +12,7 @@ import org.bukkit.inventory.ItemStack;
 
 import javax.annotation.Nonnull;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @SerializableAs("ChestData")
@@ -32,6 +34,37 @@ public final class ChestData {
 
     private int xpStored;
 
+    /**
+     * Stable identity of the chest, independent from its location.
+     * Two chests may share a block position over time; the death id never
+     * collides and is what database deletions target.
+     */
+    private UUID deathId = UUID.randomUUID();
+
+    /**
+     * Crash-consistency state, see {@link ChestIntegrityState}.
+     */
+    private ChestIntegrityState integrityState = ChestIntegrityState.CONFIRMED;
+
+    /**
+     * Sequence that must be present in {@link #integrityOwner}'s player data for
+     * the current state transition to be considered durable on the player side.
+     */
+    private long integritySequence;
+
+    /**
+     * Player whose data file settles the current transition: the dead player for
+     * {@link ChestIntegrityState#PENDING}, the looter for
+     * {@link ChestIntegrityState#CLAIMED}.
+     */
+    private UUID integrityOwner;
+
+    /**
+     * Guards the content hand over so a chest can never be emptied twice
+     * (double click, concurrent looters, expiration racing a pickup).
+     */
+    private final AtomicBoolean transferLock = new AtomicBoolean(false);
+
     public ChestData(ChestData chest) {
         this.inventory = chest.getInventory();
         this.chestLocation = chest.getChestLocation();
@@ -47,6 +80,10 @@ public final class ChestData {
         this.killerUUID = chest.getKillerUUID();
         this.worldName = chest.getWorldName();
         this.xpStored = chest.getXpStored();
+        this.deathId = chest.getDeathId();
+        this.integrityState = chest.getIntegrityState();
+        this.integritySequence = chest.getIntegritySequence();
+        this.integrityOwner = chest.getIntegrityOwner();
     }
 
     public ChestData(final Inventory inv,
@@ -271,6 +308,69 @@ public final class ChestData {
 
     public void setXpStored(int xpStored) {
         this.xpStored = xpStored;
+    }
+
+    /**
+     * @return stable identity of this chest, never {@code null}
+     */
+    public UUID getDeathId() {
+        return deathId;
+    }
+
+    public void setDeathId(final UUID deathId) {
+        this.deathId = deathId == null ? UUID.randomUUID() : deathId;
+    }
+
+    @Nonnull
+    public ChestIntegrityState getIntegrityState() {
+        return integrityState == null ? ChestIntegrityState.CONFIRMED : integrityState;
+    }
+
+    public void setIntegrityState(final ChestIntegrityState integrityState) {
+        this.integrityState = integrityState == null ? ChestIntegrityState.CONFIRMED : integrityState;
+    }
+
+    public long getIntegritySequence() {
+        return integritySequence;
+    }
+
+    public void setIntegritySequence(final long integritySequence) {
+        this.integritySequence = integritySequence;
+    }
+
+    public UUID getIntegrityOwner() {
+        return integrityOwner;
+    }
+
+    public void setIntegrityOwner(final UUID integrityOwner) {
+        this.integrityOwner = integrityOwner;
+    }
+
+    /**
+     * Indicates whether the chest is reconciled with the player data and can
+     * therefore be opened, expired or emptied.
+     *
+     * @return {@code true} when the chest is settled
+     */
+    public boolean isSettled() {
+        return getIntegrityState().isSettled();
+    }
+
+    /**
+     * Atomically takes ownership of the content hand over.
+     *
+     * @return {@code true} for the single caller allowed to move the items
+     */
+    public boolean beginTransfer() {
+        return transferLock.compareAndSet(false, true);
+    }
+
+    /**
+     * Releases a hand over taken by {@link #beginTransfer()} when it could not
+     * be completed, so the chest stays usable.
+     */
+    public void abortTransfer() {
+        transferLock.set(false);
     }
 
     public void save(@Nonnull final Consumer<Boolean> containsChestOnLoc) {

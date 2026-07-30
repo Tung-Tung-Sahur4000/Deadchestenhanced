@@ -4,6 +4,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Permission;
 import me.crylonz.deadchest.db.InMemoryChestStore;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -253,6 +254,13 @@ public class DCCommandRegistrationService extends DCCommandRegistration {
                 }
                 if (targetPlayer != null && player != null && player.isOnline()) {
                     final Player finalTargetPlayer = targetPlayer;
+                    // Items are dropped in the world, where nothing links them to
+                    // the player file: the chest is deleted first so a crash can
+                    // never give the content back twice.
+                    if (!data.beginTransfer() || !ChestIntegrityService.releaseToWorld(data)) {
+                        sender.sendMessage(local.prefixed("commands.giveback.target-not-found"));
+                        return;
+                    }
                     getSchedulerAdapter().executeForEntity(finalTargetPlayer, () -> {
                         for (ItemStack itemStack : data.getInventory()) {
                             if (itemStack != null) {

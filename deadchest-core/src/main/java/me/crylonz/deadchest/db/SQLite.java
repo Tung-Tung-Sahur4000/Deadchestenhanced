@@ -28,7 +28,12 @@ public class SQLite {
 
             try (Statement st = conn.createStatement()) {
                 st.execute("PRAGMA journal_mode=WAL");
-                st.execute("PRAGMA synchronous=NORMAL");
+                // FULL, not NORMAL: with WAL + NORMAL a committed transaction is
+                // only in the OS page cache, so a host crash or a power loss can
+                // roll back deadchest writes while the world data survives, which
+                // duplicates or destroys items. Deadchest writes are rare and off
+                // the server thread, the extra fsync is not worth the risk.
+                st.execute("PRAGMA synchronous=FULL");
                 st.execute("PRAGMA foreign_keys=ON");
             }
 

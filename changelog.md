@@ -1,3 +1,47 @@
+## Deadchest 4.29.0 - 2026-07-25
+
+- Added a respawn compass pointing at the latest DeadChest (`respawn.compass`). It cannot be dropped, cannot be moved into a
+  container, is never stored in a DeadChest, is retargeted every `respawn.compass-update-seconds`, and disappears once every
+  chest has been collected
+- Added `chest.replace-oldest` to replace the oldest DeadChest instead of creating none when a player reaches the limit
+- Reworked where a DeadChest is placed into a single resolution chain (`generation.placement.*`), so the options never conflict:
+  the death context selects one rule (void, lava, water, powder snow, suffocation, free fall), then the position is validated
+  against the world border, the build height, the blocks already used and the protection plugins
+- Added `generation.placement.safe-location` to only create DeadChests where the owner may build, asking protection plugins the
+  same way a real block placement would
+- Added void, lava-top, lava-smart, water-top, water-bottom, suffocation, powder-snow and ground placement rules
+- Fixed two entities dying on the same block sharing one position: the second DeadChest now moves to the closest free block
+- Fixed a DeadChest refused by the world border or by the build height: it is now placed below the death position instead of
+  not being created
+- Fixed the item duplication caused by a server killed without a clean shutdown (out of memory kill, `kill -9`, host crash).
+  The plugin database was written at death while the vanilla player file was not, so the player came back with the items still
+  in the inventory AND a deadchest holding a copy of them. Deaths and chest recoveries are now stamped on both sides and only
+  completed once the player data reached the disk, and a transfer left half done by a crash is settled at the next login.
+- Added `integrity.crash-protection`, `integrity.flush-player-data` and `integrity.on-rollback` to configure that behavior
+- Fixed items being destroyed when a deadchest could not be stored: the generation is now rolled back and vanilla drops apply
+- Fixed items being duplicated when a chest expired or was given back while the database write was still pending
+- Fixed a chest content being handed over twice by two interactions on the same chest
+- Fixed two deadchests sharing the same block, which left an unreachable row behind and could delete the wrong chest
+- Fixed deletions targeting a chest by position, which could remove a different chest stored on the same block
+- Database failures are now logged instead of being silently swallowed, and committed writes are flushed to disk
+
+- Fixed the storage initialization stopping halfway: the schema migration closed the shared connection, so the location and
+  death id indexes were never created and the legacy `chestData.yml` migration callback never ran
+- Fixed an explosion destroying a DeadChest placed right next to another one, the protection loop skipped a block every time
+  it protected one
+- Fixed a piston pushing a line of heads only protecting the DeadChest when it came first
+- Fixed `/dc` tab completion offering `remove` to players who may only list, and `list` to players who may only remove
+- Removed dead code: unused chest accessors, an unused config accessor that parsed a `config.yml` from the server root on
+  every startup, and the height helper left behind by the placement rework
+- The CI workflow now builds the shaded plugin jar and uploads it, together with the test reports, as build artifacts
+- Fixed the placement chain referencing the `FREEZE` damage cause directly, which does not exist before Minecraft 1.17 and
+  threw on the first death of any older server. It is now resolved by name.
+- The respawn compass is no longer handed out on servers without persistent item data (before Minecraft 1.14), where it could
+  not be recognized and would have been dropped or stored like a normal item
+- Pickup particle and sound are now resolved by name with fallbacks instead of compiled constants. Minecraft renames them
+  between versions (TOTEM became TOTEM_OF_UNDYING, FIREWORKS_SPARK became FIREWORK), and the old fallback would have thrown on
+  a version where its constant no longer exists. When nothing matches, the effect is skipped instead of breaking the pickup.
+
 ## Deadchest 4.28.0 - 2026-03-21
 
 - Added a two-phase loot system with a private phase (`chest.duration-seconds`) and an optional public loot phase (`chest.loot.*`)
