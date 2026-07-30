@@ -11,6 +11,7 @@ import org.bukkit.block.Skull;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 
 import java.io.File;
@@ -85,6 +86,27 @@ public class Utils {
 
     public static boolean isGraveBlock(Material material) {
         return graveBlocks.contains(material);
+    }
+
+    /**
+     * An ignored item keeps its vanilla death behavior : DeadChest never stores it
+     * and never locks it, so Minecraft or another plugin stays in charge of it.
+     *
+     * @param item item to test
+     * @return {@code true} when the item matches one of the 'filters.ignored-items' entries
+     */
+    public static boolean isIgnoredItem(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+
+        for (Object ignoredEntry : config.getIgnoredEntries()) {
+            if (IgnoreItemRules.matches(ignoredEntry, item)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static boolean checkTheEndGeneration(Entity player) {

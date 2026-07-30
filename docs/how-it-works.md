@@ -24,6 +24,18 @@ If the public loot phase is disabled, the chest expires directly after the priva
 If the public loot phase is enabled, the chest becomes public or semi-public after the private timer ends,
 depending on the configured public access rules.
 
+### Vanilla drop mode
+
+With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
+
+- items are spread on the ground at the death point, like vanilla
+- the drops stay reserved for the dead player, nobody else, no mob and no hopper can take them
+- the vanilla 5 minutes despawn timer is cancelled, `vanilla-drop.despawn-seconds` decides when the drops disappear
+- that countdown runs in real time, so an unloaded chunk or a player far away does not freeze it
+- the death coordinates message and the vanilla recovery compass still point to the drops
+
+The lock is stored on the item entities themselves, so it survives a chunk unload and a server restart.
+
 ### Hologram states
 
 The top hologram line represents the current access state:

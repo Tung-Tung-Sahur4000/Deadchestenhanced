@@ -1,0 +1,84 @@
+package me.crylonz.deadchest.drops;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
+
+import java.util.UUID;
+
+/**
+ * Tracking data of a single vanilla drop reserved for the player who died.
+ * <p>
+ * The expiration is stored as a wall clock timestamp so the countdown keeps
+ * running while the chunk is unloaded or while nobody is around, exactly like a
+ * DeadChest timer would.
+ */
+public class LockedDrop {
+
+    private final UUID itemId;
+    private final UUID ownerId;
+    private final UUID worldId;
+    private final long expirationTime;
+
+    private double x;
+    private double y;
+    private double z;
+
+    public LockedDrop(UUID itemId, UUID ownerId, Location location, long expirationTime) {
+        this.itemId = itemId;
+        this.ownerId = ownerId;
+        this.worldId = location != null && location.getWorld() != null ? location.getWorld().getUID() : null;
+        this.expirationTime = expirationTime;
+        if (location != null) {
+            this.x = location.getX();
+            this.y = location.getY();
+            this.z = location.getZ();
+        }
+    }
+
+    public UUID getItemId() {
+        return itemId;
+    }
+
+    public UUID getOwnerId() {
+        return ownerId;
+    }
+
+    /**
+     * @return epoch milliseconds when the drop must be removed, 0 when it never expires
+     */
+    public long getExpirationTime() {
+        return expirationTime;
+    }
+
+    public World getWorld() {
+        return worldId == null ? null : Bukkit.getWorld(worldId);
+    }
+
+    /**
+     * @return last known position of the item entity, {@code null} when its world is gone
+     */
+    public Location getLocation() {
+        World world = getWorld();
+        return world == null ? null : new Location(world, x, y, z);
+    }
+
+    /**
+     * Items float, fall and get pushed by water, so the tracked position follows
+     * the entity to keep chunk lookups accurate.
+     *
+     * @param location current position of the item entity
+     */
+    public void updateLocation(Location location) {
+        if (location == null) {
+            return;
+        }
+        this.x = location.getX();
+        this.y = location.getY();
+        this.z = location.getZ();
+    }
+
+    public boolean isExpired(long now) {
+        return expirationTime > 0L && expirationTime <= now;
+    }
+}

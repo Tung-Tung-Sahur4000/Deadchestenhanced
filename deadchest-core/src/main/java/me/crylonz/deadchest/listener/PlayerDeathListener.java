@@ -6,8 +6,8 @@ import me.crylonz.deadchest.Permission;
 import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.placement.GraveLocationResolver;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
-import me.crylonz.deadchest.utils.IgnoreItemRules;
 import me.crylonz.deadchest.utils.Utils;
 import org.bukkit.*;
 import org.bukkit.block.Block;
@@ -52,6 +52,14 @@ public class PlayerDeathListener implements Listener {
         final Player player = event.getEntity().getPlayer();
         if (playerOrWorldDisallowsGeneration(player)) return;
         if (pvpKeepInventoryCase(event, player)) return;
+
+        // 1b) Vanilla drop mode : no chest at all, only locked drops on the ground
+        if (LockedDropService.isVanillaDropModeEnabled()) {
+            generateLog("Player [" + player.getName() + "] died with " + ConfigKey.VANILLA_DROP_ENABLED +
+                    " set to true : items are dropped like vanilla. No Deadchest generated");
+            LockedDropService.handlePlayerDeath(event, player);
+            return;
+        }
 
         if (player.getInventory().isEmpty()) {
             generateLog("Player [" + player.getName() + "] died without inventory : No Deadchest generated");
@@ -373,20 +381,6 @@ public class PlayerDeathListener implements Listener {
                 p.getInventory().removeItem(item);
             }
         }
-    }
-
-    private boolean isIgnoredItem(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-
-        for (Object ignoredEntry : config.getIgnoredEntries()) {
-            if (IgnoreItemRules.matches(ignoredEntry, item)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void maybeSendPosition(Player p, Block b) {

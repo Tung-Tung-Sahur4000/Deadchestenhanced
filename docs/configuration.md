@@ -56,6 +56,35 @@ The timeout model is therefore:
 - If `chest.loot.enabled=false`, the chest expires directly after the private phase and uses `chest.drop-items-on-timeout`.
 - If `chest.loot.enabled=true`, the chest enters the public phase after the private phase, then expires using `chest.loot.drop-items-on-timeout`.
 
+### Vanilla Drop Mode
+
+Turns DeadChest off as a chest plugin: no chest, no hologram, no stored inventory.
+Items are spread on the ground exactly like vanilla, but they stay reserved for the player who died and are protected from the vanilla despawn timer.
+
+| Key                                  | Type    | Default | Description                                                                                                    |
+|--------------------------------------|---------|---------|----------------------------------------------------------------------------------------------------------------|
+| `vanilla-drop.enabled`               | boolean | `false` | Disable DeadChest generation and keep vanilla death drops instead.                                              |
+| `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too.                                   |
+| `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
+| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla 5 minutes despawn timer so only `despawn-seconds` applies.                                   |
+| `vanilla-drop.invulnerable`          | boolean | `false` | Make reserved drops immune to fire, lava, explosions and cactus.                                                |
+| `vanilla-drop.glow`                  | boolean | `false` | Add a glowing outline on reserved drops.                                                                        |
+
+What still works in this mode:
+
+- `messages.display-position-on-death` sends the coordinates of the drops on death.
+- The vanilla recovery compass keeps pointing at the death location, the plugin never cancels the death itself.
+- `filters.ignored-items` entries are left to vanilla or to another plugin, they are never locked.
+- Early exits still apply first: `chest.*` limits are irrelevant here, but excluded worlds, creative mode, The End and `pvp.keep-inventory-on-player-kill` keep their usual behavior.
+
+Notes:
+
+- The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
+- Reserved drops are tagged on the item entity, so a chunk unload or a server restart does not release them (requires Minecraft 1.14+, older servers only keep the lock until the next restart).
+- Bypass permissions: `deadchest.dropPass` and `deadchest.chestPass`.
+- Turning the mode off later does not release the drops already on the ground: they keep their lock and their timer.
+- Chest-only options are not applied in this mode: `filters.excluded-items`, `durability.loss-on-death-percent`, `xp.store-on-death` and every `chest.*` key. Items and XP follow vanilla rules.
+
 ### Permissions
 
 | Key                            | Type    | Default | Description                                            |
@@ -261,5 +290,6 @@ The access-state line reflects both the private/public phase and the configured 
 - `deadchest.remove.other`: remove another player's chests
 - `deadchest.giveback`: give back another player's items
 - `deadchest.chestPass`: bypass owner-only chest access
+- `deadchest.dropPass`: pick up drops reserved to another player in vanilla drop mode
 - `deadchest.infinityChest`: create infinite chests
 

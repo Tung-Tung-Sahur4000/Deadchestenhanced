@@ -41,6 +41,13 @@
 - Pickup particle and sound are now resolved by name with fallbacks instead of compiled constants. Minecraft renames them
   between versions (TOTEM became TOTEM_OF_UNDYING, FIREWORKS_SPARK became FIREWORK), and the old fallback would have thrown on
   a version where its constant no longer exists. When nothing matches, the effect is skipped instead of breaking the pickup.
+- Added a vanilla drop mode (`vanilla-drop.enabled`) that disables DeadChest generation and keeps vanilla death drops
+- Reserved the vanilla drops to the player who died (`vanilla-drop.owner-only-pickup`), including against mobs and hoppers
+- Added a real time lifetime for the reserved drops (`vanilla-drop.despawn-seconds`, default 5 minutes) that keeps counting while chunks are unloaded
+- Added despawn protection so reserved drops never disappear before their configured lifetime (`vanilla-drop.protect-from-despawn`)
+- Added optional invulnerability and glowing outline for reserved drops (`vanilla-drop.invulnerable`, `vanilla-drop.glow`)
+- Added the `deadchest.dropPass` permission to bypass reserved drops
+- Kept the death coordinates message in vanilla drop mode
 
 ## Deadchest 4.28.0 - 2026-03-21
 

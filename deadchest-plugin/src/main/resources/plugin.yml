@@ -16,6 +16,9 @@ permissions:
   deadchest.chestPass:
     description: Player can open all deadChest
     default: op
+  deadchest.dropPass:
+    description: Player can pick up drops reserved to another player in vanilla drop mode
+    default: op
   deadchest.infinityChest:
     description: Player dead chest never disappear
     default: false

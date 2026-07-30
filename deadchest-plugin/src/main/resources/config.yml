@@ -100,6 +100,39 @@ chest:
       # Any player can loot during public phase.
       other-players: true
 
+vanilla-drop:
+  # Disables DeadChest generation and keeps vanilla death drops instead.
+  # true  = no chest, no hologram: items are spread on the ground like vanilla,
+  #         but they stay reserved for the dead player and are protected from despawn.
+  # false = normal DeadChest behavior.
+  # The death coordinates message ('messages.display-position-on-death') still works,
+  # and the vanilla recovery compass keeps pointing at the death location.
+  enabled: false
+
+  # Restrict the drops to the player who died.
+  # true  = only the owner can pick them up, mobs and hoppers are blocked too
+  # false = anyone can pick them up (drops are only protected from despawn)
+  # Bypass permissions: 'deadchest.dropPass', 'deadchest.chestPass'
+  owner-only-pickup: true
+
+  # Lifetime in seconds of the reserved drops.
+  # The countdown uses real time, so it keeps running while the chunk is unloaded
+  # or while the player is far away.
+  # 0 = drops never disappear
+  despawn-seconds: 300
+
+  # Cancel the vanilla 5 minutes despawn timer for reserved drops.
+  # true  = drops only disappear when 'despawn-seconds' is reached
+  # false = vanilla despawn applies, whichever comes first
+  protect-from-despawn: true
+
+  # Make reserved drops immune to fire, lava, explosions and cactus.
+  # false = vanilla behavior, items can still be destroyed
+  invulnerable: false
+
+  # Add a glowing outline on reserved drops to find them back easily.
+  glow: false
+
 permissions:
   # Require permission to generate a DeadChest on death.
   # Required permission when true: 'deadchest.generate'
@@ -359,4 +392,5 @@ filters:
 # deadchest.remove.other  -> Remove another player's DeadChests with '/dc remove <player>'.
 # deadchest.giveback      -> Give back another player's items with '/dc giveback <player>'.
 # deadchest.chestPass     -> Bypass owner-only chest access.
+# deadchest.dropPass      -> Pick up drops reserved to another player in vanilla drop mode.
 # deadchest.infinityChest -> Create infinite DeadChests (not affected by duration-seconds timeout).

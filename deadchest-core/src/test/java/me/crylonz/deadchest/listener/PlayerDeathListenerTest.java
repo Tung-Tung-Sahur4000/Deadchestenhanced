@@ -13,6 +13,7 @@ import me.crylonz.deadchest.Localization;
 import me.crylonz.deadchest.db.SQLite;
 import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import me.crylonz.deadchest.integrity.PlayerDataStamp;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.GameMode;
@@ -131,6 +132,7 @@ class PlayerDeathListenerTest {
             hologramMock.close();
         }
         me.crylonz.deadchest.TestDatabase.stop();
+        LockedDropService.clearTracking();
         MockBukkit.unmock();
     }
 
@@ -469,6 +471,24 @@ class PlayerDeathListenerTest {
         listener.onPlayerDeathEvent(evt);
 
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest should be generated with empty inventory");
+    }
+
+    @Test
+    void vanillaDropModeReplacesTheChestByLockedDrops() {
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_OWNER_ONLY_PICKUP)).thenReturn(true);
+        when(cfg.getInt(ConfigKey.VANILLA_DROP_DESPAWN_SECONDS)).thenReturn(300);
+
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.DIAMOND, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest is generated in vanilla drop mode");
+        assertTrue(evt.getDrops().isEmpty(), "Drops are respawned as locked items");
+        assertEquals(1, LockedDropService.getTrackedDropAmount());
+        assertEquals(1, world.getEntitiesByClass(org.bukkit.entity.Item.class).size());
     }
 
     @ParameterizedTest(name = "slot {0} with Vanishing should be cleared")
