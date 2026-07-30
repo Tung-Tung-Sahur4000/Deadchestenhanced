@@ -87,9 +87,8 @@ Notes:
 - The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
 - The vanilla despawn timer this protects against is `item-despawn-rate` in `spigot.yml`, not a fixed 5 minutes. It is
   `6000` ticks out of the box but plenty of servers lower it, and a server sitting at `3000` removes untouched items after
-  2 minutes 30. With `protect-from-despawn: true` the reserved drops are taken off that timer entirely, so
-  `despawn-seconds` applies whatever the server rate is. It only bites with `protect-from-despawn: false`, or for the
-  items DeadChest never took over (`filters.ignored-items`), which keep the server rate.
+  2 minutes 30. Keep `item-despawn-rate` at `6000` if you want `despawn-seconds: 300` to mean what it says. It also
+  applies to the items DeadChest never took over (`filters.ignored-items`), which always keep the server rate.
 - Reserved drops are tagged on the item entity, so a chunk unload or a server restart does not release them (requires Minecraft 1.14+, older servers only keep the lock until the next restart).
 - The reservation is written on the item entity itself, where Minecraft enforces it: the server refuses to hand a reserved drop to another player even if no plugin is listening. DeadChest also cancels the pickup events, which covers mobs and hoppers, and it does so last so another plugin cannot undo it.
 - Walking away is safe: an unloaded chunk saves its items to disk like vanilla, and the drops are found back when the chunk (or, on Paper 1.17+, its entity storage) is loaded again. Only the lifetime can remove them.

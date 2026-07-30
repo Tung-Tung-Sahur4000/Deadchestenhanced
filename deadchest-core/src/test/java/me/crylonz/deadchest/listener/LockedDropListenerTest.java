@@ -33,7 +33,6 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 
@@ -107,7 +106,7 @@ class LockedDropListenerTest {
 
     /**
      * MockBukkit item entities throw {@code UnimplementedOperationException} on the
-     * owner and lifetime API, and that exception <em>aborts</em> a test instead of
+     * owner API, and that exception <em>aborts</em> a test instead of
      * failing it, so an assertion on those calls would silently report as skipped.
      * The spy gives them a working implementation. It shares the persistent data
      * container of the entity it wraps, so the item left in the world stays tagged.
@@ -115,18 +114,12 @@ class LockedDropListenerTest {
     private Item withEntityApi(Item item) {
         Item entity = spy(item);
         AtomicReference<UUID> nativeOwner = new AtomicReference<>();
-        AtomicBoolean unlimitedLifetime = new AtomicBoolean();
 
         doAnswer(invocation -> {
             nativeOwner.set(invocation.getArgument(0));
             return null;
         }).when(entity).setOwner(any());
         doAnswer(invocation -> nativeOwner.get()).when(entity).getOwner();
-        doAnswer(invocation -> {
-            unlimitedLifetime.set(invocation.getArgument(0));
-            return null;
-        }).when(entity).setUnlimitedLifetime(anyBoolean());
-        doAnswer(invocation -> unlimitedLifetime.get()).when(entity).isUnlimitedLifetime();
         doNothing().when(entity).setCanMobPickup(anyBoolean());
 
         return entity;
@@ -270,13 +263,6 @@ class LockedDropListenerTest {
         listener.onInventoryPickupItem(event);
 
         assertFalse(event.isCancelled());
-    }
-
-    @Test
-    void aReservedDropIsTakenOffTheVanillaDespawnTimerWhenItIsLocked() {
-        // The timer is 'item-despawn-rate' in spigot.yml, which a server can set
-        // below the configured lifetime.
-        assertTrue(lockedDrop(owner.getUniqueId(), System.currentTimeMillis() + 300_000L).isUnlimitedLifetime());
     }
 
     @Test
