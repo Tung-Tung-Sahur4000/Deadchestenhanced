@@ -736,8 +736,10 @@ public final class LockedDropService {
     }
 
     /**
-     * Resets the vanilla age of the item so its 5 minutes despawn timer never
-     * completes while the drop is still reserved.
+     * Resets the vanilla age of the item so the server despawn timer never
+     * completes while the drop is still reserved. That timer is the
+     * 'item-despawn-rate' of spigot.yml, 6000 ticks out of the box but often
+     * lowered, so it can be shorter than the configured lifetime.
      *
      * @param item reserved drop
      */

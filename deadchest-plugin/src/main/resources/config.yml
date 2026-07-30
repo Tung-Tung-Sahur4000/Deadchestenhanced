@@ -121,9 +121,12 @@ vanilla-drop:
   # 0 = drops never disappear
   despawn-seconds: 300
 
-  # Cancel the vanilla 5 minutes despawn timer for reserved drops.
+  # Cancel the vanilla despawn timer for reserved drops.
   # true  = drops only disappear when 'despawn-seconds' is reached
   # false = vanilla despawn applies, whichever comes first
+  # Careful with false: the vanilla timer is 5 minutes by default, but it is the
+  # 'item-despawn-rate' of spigot.yml, which many servers lower. A value below
+  # 'despawn-seconds' x 20 removes the drops before the lifetime set here.
   protect-from-despawn: true
 
   # Make reserved drops immune to fire, lava, explosions and cactus.

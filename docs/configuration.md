@@ -66,7 +66,7 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 | `vanilla-drop.enabled`               | boolean | `false` | Disable DeadChest generation and keep vanilla death drops instead.                                              |
 | `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too. `false` leaves the drops open to everybody, mobs and hoppers included. |
 | `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
-| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla 5 minutes despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
+| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
 | `vanilla-drop.invulnerable`          | boolean | `false` | Make reserved drops immune to fire, lava, explosions and cactus.                                                |
 | `vanilla-drop.glow`                  | boolean | `false` | Add a glowing outline on reserved drops.                                                                        |
 
@@ -85,6 +85,10 @@ What still works in this mode:
 Notes:
 
 - The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
+- The vanilla despawn timer this protects against is `item-despawn-rate` in `spigot.yml`, not a fixed 5 minutes. It is
+  `6000` ticks out of the box but plenty of servers lower it, and a server sitting at `3000` removes untouched items after
+  2 minutes 30. That only matters with `protect-from-despawn: false`, or for the items DeadChest never took over
+  (`filters.ignored-items`), which keep the server rate.
 - Reserved drops are tagged on the item entity, so a chunk unload or a server restart does not release them (requires Minecraft 1.14+, older servers only keep the lock until the next restart).
 - The reservation is written on the item entity itself, where Minecraft enforces it: the server refuses to hand a reserved drop to another player even if no plugin is listening. DeadChest also cancels the pickup events, which covers mobs and hoppers, and it does so last so another plugin cannot undo it.
 - Walking away is safe: an unloaded chunk saves its items to disk like vanilla, and the drops are found back when the chunk (or, on Paper 1.17+, its entity storage) is loaded again. Only the lifetime can remove them.

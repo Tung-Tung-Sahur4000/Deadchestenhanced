@@ -30,7 +30,7 @@ With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
 
 - items are spread on the ground at the death point, like vanilla
 - the drops stay reserved for the dead player, nobody else, no mob and no hopper can take them
-- the vanilla 5 minutes despawn timer is cancelled, `vanilla-drop.despawn-seconds` decides when the drops disappear
+- the vanilla despawn timer (`item-despawn-rate` in `spigot.yml`, 5 minutes by default) is cancelled, `vanilla-drop.despawn-seconds` decides when the drops disappear
 - that countdown runs in real time, so an unloaded chunk or a player far away does not freeze it
 - the death coordinates message and the vanilla recovery compass still point to the drops
 - the respawn compass (`respawn.compass`) targets the drop site, and disappears once the drops are gone
