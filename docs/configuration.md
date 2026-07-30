@@ -81,6 +81,7 @@ Notes:
 
 - The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
 - Reserved drops are tagged on the item entity, so a chunk unload or a server restart does not release them (requires Minecraft 1.14+, older servers only keep the lock until the next restart).
+- Walking away is safe: an unloaded chunk saves its items to disk like vanilla, and the drops are found back when the chunk (or, on Paper 1.17+, its entity storage) is loaded again. Only the lifetime can remove them.
 - Bypass permissions: `deadchest.dropPass` and `deadchest.chestPass`.
 - Turning the mode off later does not release the drops already on the ground: they keep their lock and their timer.
 - Chest-only options are not applied in this mode: `filters.excluded-items`, `durability.loss-on-death-percent`, `xp.store-on-death` and every `chest.*` key. Items and XP follow vanilla rules.

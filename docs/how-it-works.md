@@ -35,6 +35,9 @@ With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
 - the death coordinates message and the vanilla recovery compass still point to the drops
 
 The lock is stored on the item entities themselves, so it survives a chunk unload and a server restart.
+Walking far away does not destroy anything: the items are saved with their chunk like vanilla and come back with it.
+The only thing that removes them is `vanilla-drop.despawn-seconds`, so a player returning later than that finds the spot empty, exactly like an expired DeadChest.
+Set `vanilla-drop.despawn-seconds: 0` to keep the drops until somebody picks them up.
 
 ### Hologram states
 

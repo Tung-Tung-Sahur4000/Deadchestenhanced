@@ -11,6 +11,7 @@ import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ItemDespawnEvent;
@@ -18,12 +19,14 @@ import org.bukkit.event.entity.ItemMergeEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -193,5 +196,24 @@ class LockedDropListenerTest {
         listener.onChunkLoad(new ChunkLoadEvent(world.getChunkAt(0, 0), false));
 
         assertEquals(1, LockedDropService.getTrackedDropAmount());
+    }
+
+    @Test
+    void entitiesLoadTracksReservedDropsAgain() {
+        Item item = lockedDrop(owner.getUniqueId(), System.currentTimeMillis() + 300_000L);
+        LockedDropService.clearTracking();
+
+        new LockedDropEntitiesListener().onEntitiesLoad(
+                new EntitiesLoadEvent(world.getChunkAt(0, 0), Collections.<Entity>singletonList(item)));
+
+        assertEquals(1, LockedDropService.getTrackedDropAmount());
+    }
+
+    @Test
+    void entitiesLoadIgnoresRegularDrops() {
+        new LockedDropEntitiesListener().onEntitiesLoad(
+                new EntitiesLoadEvent(world.getChunkAt(0, 0), Collections.<Entity>singletonList(regularDrop())));
+
+        assertEquals(0, LockedDropService.getTrackedDropAmount());
     }
 }

@@ -1,5 +1,6 @@
 package me.crylonz.deadchest;
 
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.listener.*;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestUpdater;
@@ -48,6 +49,10 @@ public class DeadChest extends JavaPlugin {
         pm.registerEvents(new ExplosionListener(), this);
         pm.registerEvents(new InventoryClickListener(), this);
         pm.registerEvents(new LockedDropListener(), this);
+        if (LockedDropService.supportsEntitiesLoadEvent()) {
+            // Paper 1.17+ loads entities apart from their chunk
+            pm.registerEvents(new LockedDropEntitiesListener(), this);
+        }
         pm.registerEvents(new PistonListener(), this);
         pm.registerEvents(new PlayerDeathListener(), this);
         pm.registerEvents(new PlayerIntegrityListener(), this);

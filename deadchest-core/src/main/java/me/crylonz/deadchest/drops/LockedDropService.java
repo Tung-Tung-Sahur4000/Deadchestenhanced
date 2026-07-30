@@ -17,6 +17,7 @@ import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.metadata.MetadataValue;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -231,10 +232,20 @@ public final class LockedDropService {
             return;
         }
 
-        Entity[] entities;
         try {
-            entities = chunk.getEntities();
+            trackLoadedDrops(Arrays.asList(chunk.getEntities()));
         } catch (Throwable ignored) {
+            // Entities not readable yet : the entity load event takes over.
+        }
+    }
+
+    /**
+     * Re-registers the reserved drops of a batch of entities that just came back.
+     *
+     * @param entities entities being loaded
+     */
+    public static void trackLoadedDrops(Iterable<Entity> entities) {
+        if (entities == null) {
             return;
         }
 
@@ -242,6 +253,19 @@ public final class LockedDropService {
             if (entity instanceof Item) {
                 trackExistingDrop((Item) entity);
             }
+        }
+    }
+
+    /**
+     * @return {@code true} when the platform loads entities through their own event,
+     * which is the case on Paper since Minecraft 1.17
+     */
+    public static boolean supportsEntitiesLoadEvent() {
+        try {
+            Class.forName("org.bukkit.event.world.EntitiesLoadEvent");
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
