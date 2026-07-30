@@ -92,9 +92,24 @@ have no entity persistent data, so `NoOpDropTagStorage` is selected and the lock
 which is lost on restart. The in-memory `trackedDrops` map is only an index for the maintenance pass, never the source
 of truth.
 
-Enforcement lives in `LockedDropListener`: pickup by anyone else, hopper pickup, vanilla despawn, and merges between
-two different deaths are cancelled. `LockedDropEntitiesListener` handles Paper's `EntitiesLoadEvent` and is registered
-only when that class exists, because Paper 1.17+ loads entities separately from their chunk.
+Enforcement has two layers, and the order matters.
+
+The first one is the vanilla owner field of the item entity, written by `LockedDropService.applyNativeLock()`. Minecraft
+refuses to hand a dropped item to a player other than the one stored there, so the reservation holds even if no plugin
+listens. It is re-applied on every maintenance pass, on chunk load and after a restart, and it is dropped as soon as
+`vanilla-drop.owner-only-pickup` is turned off. **A protection that only exists in a listener is not a protection**: the
+lock lived in `LockedDropListener` alone until 4.30.0 and any plugin listening later could un-cancel it.
+
+The second one is `LockedDropListener`, which covers what the vanilla field does not: hopper pickup, mobs, vanilla
+despawn, and merges between two different deaths. Its four handlers run at `EventPriority.HIGHEST` so nothing can undo
+them afterwards. Keep them there.
+
+The two layers interact in one place: `deadchest.dropPass` and `deadchest.chestPass`. The server applies the owner field
+**after** the pickup event, so letting the event through is not enough for a bypass holder. The listener calls
+`releaseNativeLock()` for them and the maintenance pass puts the lock back on the next second.
+
+`LockedDropEntitiesListener` handles Paper's `EntitiesLoadEvent` and is registered only when that class exists, because
+Paper 1.17+ loads entities separately from their chunk.
 
 ### Crash duplication protection
 
@@ -168,7 +183,7 @@ interface on recent ones, which is why the inventories are read from the event i
 
 ### Testing
 
-MockBukkit plus Mockito, everything in `deadchest-core/src/test`. 259 tests today.
+MockBukkit plus Mockito, everything in `deadchest-core/src/test`. 268 tests today.
 
 Patterns used everywhere:
 
