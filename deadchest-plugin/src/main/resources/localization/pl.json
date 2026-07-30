@@ -22,6 +22,7 @@
   "death.drop-position": "§6Twoje przedmioty wypadły na X: §f{0}§6 Y: §f{1}§6 Z: §f{2}",
   "death.drop-locked": "§7Tylko ty możesz je podnieść. Znikną za §f{0}m {1}s§7.",
   "death.drop-locked-forever": "§7Tylko ty możesz je podnieść i nie znikną.",
+  "death.drop-rollback-voided": "§cTwoje przedmioty na ziemi zostały usunięte: serwer padł przed zapisaniem twojej śmierci, nadal je masz.",
   "commands.reload.success": "§6Przeładowanie zakończone pomyślnie.",
   "commands.error.no-permission": "§cPotrzebujesz uprawnień",
   "commands.error.player-only": "§cKomenda musi zostać wykonana przez gracza",

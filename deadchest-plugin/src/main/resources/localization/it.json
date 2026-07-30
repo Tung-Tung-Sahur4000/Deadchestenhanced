@@ -22,6 +22,7 @@
   "death.drop-position": "§6I tuoi oggetti sono caduti a X: §f{0}§6 Y: §f{1}§6 Z: §f{2}",
   "death.drop-locked": "§7Solo tu puoi raccoglierli. Spariranno tra §f{0}m {1}s§7.",
   "death.drop-locked-forever": "§7Solo tu puoi raccoglierli e non spariranno.",
+  "death.drop-rollback-voided": "§cI tuoi oggetti a terra sono stati rimossi: il server è andato in crash prima di salvare la tua morte, li hai ancora.",
   "commands.reload.success": "§6Ricaricamento completato.",
   "commands.error.no-permission": "§cTi serve un permesso",
   "commands.error.player-only": "§cIl comando deve essere eseguito da un giocatore",

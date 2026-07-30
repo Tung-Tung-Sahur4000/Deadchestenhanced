@@ -65,6 +65,15 @@ public class LockedDropListener implements Listener {
         // Merging drops of two different owners would transfer the lock, so keep them apart.
         if (sourceOwner == null || !sourceOwner.equals(targetOwner)) {
             event.setCancelled(true);
+            return;
+        }
+
+        // Same owner but two different deaths : the merged stack would keep a single
+        // set of tags, so one death would inherit the lifetime and the crash
+        // protection stamp of the other.
+        if (LockedDropService.getCreationTime(event.getEntity())
+                != LockedDropService.getCreationTime(event.getTarget())) {
+            event.setCancelled(true);
         }
     }
 

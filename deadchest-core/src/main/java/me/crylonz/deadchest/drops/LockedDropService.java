@@ -130,11 +130,27 @@ public final class LockedDropService {
                     + "] : reserved drops created without crash duplication protection.");
         }
 
-        for (ItemStack stack : stacksToLock) {
-            Item spawned = world.dropItemNaturally(dropLocation, stack);
-            lockDrop(spawned, player.getUniqueId(), player.getName(), creationTime, expirationTime);
-            if (sequence > 0L) {
-                stampPending(spawned, sequence);
+        for (int index = 0; index < stacksToLock.size(); index++) {
+            final ItemStack stack = stacksToLock.get(index);
+            try {
+                Item spawned = world.dropItemNaturally(dropLocation, stack);
+                lockDrop(spawned, player.getUniqueId(), player.getName(), creationTime, expirationTime);
+                if (sequence > 0L) {
+                    stampPending(spawned, sequence);
+                }
+            } catch (Throwable spawnFailure) {
+                // The stacks were taken out of the death event, so giving up here
+                // would destroy them. Whatever could not be spawned goes back to
+                // vanilla, which drops it the usual way.
+                final List<ItemStack> notSpawned = stacksToLock.subList(index, stacksToLock.size());
+                event.getDrops().addAll(notSpawned);
+                if (log != null) {
+                    log.severe("[DeadChest] Could not spawn the reserved drops of [" + player.getName()
+                            + "], " + notSpawned.size() + " stack(s) left to vanilla : " + spawnFailure);
+                }
+                generateLog("Could not spawn the reserved drops of [" + player.getName() + "] : "
+                        + notSpawned.size() + " stack(s) left to vanilla drops (" + spawnFailure + ")");
+                break;
             }
         }
 

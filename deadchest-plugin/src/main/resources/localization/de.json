@@ -22,6 +22,7 @@
   "death.drop-position": "§6Deine Gegenstände liegen bei X: §f{0}§6 Y: §f{1}§6 Z: §f{2}",
   "death.drop-locked": "§7Nur du kannst sie aufheben. Sie verschwinden in §f{0}m {1}s§7.",
   "death.drop-locked-forever": "§7Nur du kannst sie aufheben, und sie verschwinden nicht.",
+  "death.drop-rollback-voided": "§cDeine am Boden liegenden Gegenstände wurden entfernt: der Server ist abgestürzt, bevor dein Tod gespeichert wurde, du hast sie noch.",
   "commands.reload.success": "§6Neu laden erfolgreich.",
   "commands.error.no-permission": "§cDu hast keine Berechtigung",
   "commands.error.player-only": "§cDieser Befehl muss von einem Spieler ausgeführt werden",

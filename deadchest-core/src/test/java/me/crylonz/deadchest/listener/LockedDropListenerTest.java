@@ -39,6 +39,8 @@ import static org.mockito.Mockito.when;
 
 class LockedDropListenerTest {
 
+    private static final long DEATH_TIME = 1_700_000_000_000L;
+
     private ServerMock server;
     private WorldMock world;
     private PlayerMock owner;
@@ -81,8 +83,12 @@ class LockedDropListenerTest {
     }
 
     private Item lockedDrop(UUID ownerId, long expirationTime) {
+        return lockedDrop(ownerId, expirationTime, DEATH_TIME);
+    }
+
+    private Item lockedDrop(UUID ownerId, long expirationTime, long creationTime) {
         Item item = world.dropItemNaturally(new Location(world, 0, 65, 0), new ItemStack(Material.DIAMOND, 1));
-        LockedDropService.lockDrop(item, ownerId, "Steve", System.currentTimeMillis(), expirationTime);
+        LockedDropService.lockDrop(item, ownerId, "Steve", creationTime, expirationTime);
         return item;
     }
 
@@ -178,14 +184,27 @@ class LockedDropListenerTest {
     }
 
     @Test
-    void dropsOfTheSameOwnerStillMerge() {
-        Item source = lockedDrop(owner.getUniqueId(), 0L);
-        Item target = lockedDrop(owner.getUniqueId(), 0L);
+    void dropsOfTheSameDeathStillMerge() {
+        Item source = lockedDrop(owner.getUniqueId(), 0L, DEATH_TIME);
+        Item target = lockedDrop(owner.getUniqueId(), 0L, DEATH_TIME);
         ItemMergeEvent event = new ItemMergeEvent(source, target);
 
         listener.onItemMerge(event);
 
         assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void twoDeathsOfTheSameOwnerNeverMerge() {
+        // The merged stack would keep one set of tags only, so the other death
+        // would inherit its lifetime and its crash protection stamp.
+        Item source = lockedDrop(owner.getUniqueId(), 0L, DEATH_TIME);
+        Item target = lockedDrop(owner.getUniqueId(), 0L, DEATH_TIME + 60_000L);
+        ItemMergeEvent event = new ItemMergeEvent(source, target);
+
+        listener.onItemMerge(event);
+
+        assertTrue(event.isCancelled());
     }
 
     @Test
