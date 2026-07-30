@@ -4,6 +4,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.DeadChestManager;
 import me.crylonz.deadchest.db.ChestDataRepository;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.entity.Player;
 
@@ -195,7 +196,9 @@ public final class ChestIntegrityService {
                 || !shouldFlushPlayerData()
                 || PlayerDataStamp.flush(player);
 
-        return settle(player, playerDataDurable);
+        // The vanilla drop mode stages its drops on the same stamp, so it settles
+        // on the same flush.
+        return settle(player, playerDataDurable) + LockedDropService.settleIntegrity(player);
     }
 
     /**
@@ -243,12 +246,16 @@ public final class ChestIntegrityService {
             return;
         }
 
+        final long persistedSequence = PlayerDataStamp.readSequence(player);
+
+        // Reserved vanilla drops are judged against the same stamp, and they exist
+        // even when this player has no chest at all.
+        LockedDropService.reconcileIntegrity(player, persistedSequence);
+
         final List<ChestData> stamped = stampedChestsOf(player.getUniqueId());
         if (stamped.isEmpty()) {
             return;
         }
-
-        final long persistedSequence = PlayerDataStamp.readSequence(player);
 
         for (ChestData chest : stamped) {
             final boolean playerSidePersisted = chest.getIntegritySequence() <= persistedSequence;
@@ -348,17 +355,22 @@ public final class ChestIntegrityService {
     /**
      * Allocates the next sequence for a player and stamps it on the player data.
      *
+     * Shared by the deadchests and by the reserved vanilla drops : both stamp the
+     * same player data, so the numbering has to come from one place.
+     *
      * @param player player to stamp
      * @return allocated sequence, or {@code 0} when the player could not be
      * stamped, meaning no proof will be available later
      */
-    private static long allocateSequence(@Nonnull final Player player) {
+    public static long allocateSequence(@Nonnull final Player player) {
         final UUID uuid = player.getUniqueId();
 
         long highest = Math.max(PlayerDataStamp.readSequence(player), sessionSequences.getOrDefault(uuid, 0L));
         for (ChestData chest : stampedChestsOf(uuid)) {
             highest = Math.max(highest, chest.getIntegritySequence());
         }
+        // Reserved vanilla drops are stamped on the same player data.
+        highest = Math.max(highest, LockedDropService.highestStampedSequence(uuid));
 
         final long allocated = highest + 1;
         if (!PlayerDataStamp.writeSequence(player, allocated)) {

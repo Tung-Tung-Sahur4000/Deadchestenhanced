@@ -75,6 +75,9 @@ What still works in this mode:
 - `messages.display-position-on-death` sends the coordinates of the drops on death.
 - `respawn.compass` hands out the compass on respawn as usual, pointing at the reserved drops instead of a chest. It is
   retargeted, and removed once every drop has been picked up or expired, exactly like it is for a chest.
+- `integrity.crash-protection` covers the reserved drops too: the death is stamped on the player data before the items leave
+  the inventory, and a server killed without a clean shutdown can no longer leave the items both in the inventory and on the
+  ground. `integrity.flush-player-data` and `integrity.on-rollback` apply the same way as for chests.
 - The vanilla recovery compass keeps pointing at the death location, the plugin never cancels the death itself.
 - `filters.ignored-items` entries are left to vanilla or to another plugin, they are never locked.
 - Early exits still apply first: `chest.*` limits are irrelevant here, but excluded worlds, creative mode, The End and `pvp.keep-inventory-on-player-kill` keep their usual behavior.

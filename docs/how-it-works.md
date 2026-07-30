@@ -34,6 +34,8 @@ With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
 - that countdown runs in real time, so an unloaded chunk or a player far away does not freeze it
 - the death coordinates message and the vanilla recovery compass still point to the drops
 - the respawn compass (`respawn.compass`) targets the drop site, and disappears once the drops are gone
+- the crash protection covers the drops: a server killed without saving cannot leave the items both in the inventory and on
+  the ground, the duplicate is removed at the next login of the owner
 
 The lock is stored on the item entities themselves, so it survives a chunk unload and a server restart.
 Walking far away does not destroy anything: the items are saved with their chunk like vanilla and come back with it.

@@ -26,6 +26,21 @@ class NoOpDropTagStorage implements DropTagStorage {
     }
 
     @Override
+    public void writeIntegrity(Item item, long sequence, boolean confirmed) {
+        // Nothing to persist.
+    }
+
+    @Override
+    public long readSequence(Item item) {
+        return 0L;
+    }
+
+    @Override
+    public boolean readConfirmed(Item item) {
+        return true;
+    }
+
+    @Override
     public long readCreation(Item item) {
         return 0L;
     }

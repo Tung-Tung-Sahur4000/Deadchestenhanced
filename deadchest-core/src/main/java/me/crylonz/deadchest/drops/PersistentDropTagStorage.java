@@ -18,6 +18,8 @@ class PersistentDropTagStorage implements DropTagStorage {
     private static final String OWNER_KEY = "locked-drop-owner";
     private static final String OWNER_NAME_KEY = "locked-drop-owner-name";
     private static final String CREATION_KEY = "locked-drop-created";
+    private static final String SEQUENCE_KEY = "locked-drop-sequence";
+    private static final String CONFIRMED_KEY = "locked-drop-confirmed";
     private static final String EXPIRATION_KEY = "locked-drop-expiration";
 
     @Override
@@ -56,6 +58,44 @@ class PersistentDropTagStorage implements DropTagStorage {
             return UUID.fromString(owner);
         } catch (IllegalArgumentException ignored) {
             return null;
+        }
+    }
+
+    @Override
+    public void writeIntegrity(Item item, long sequence, boolean confirmed) {
+        PersistentDataContainer container = container(item);
+        NamespacedKey sequenceKey = key(SEQUENCE_KEY);
+        if (container == null || sequenceKey == null) {
+            return;
+        }
+
+        try {
+            container.set(sequenceKey, PersistentDataType.LONG, sequence);
+            container.set(key(CONFIRMED_KEY), PersistentDataType.LONG, confirmed ? 1L : 0L);
+        } catch (Throwable ignored) {
+            // Container not writable on this platform.
+        }
+    }
+
+    @Override
+    public long readSequence(Item item) {
+        return readLong(item, SEQUENCE_KEY);
+    }
+
+    @Override
+    public boolean readConfirmed(Item item) {
+        PersistentDataContainer container = container(item);
+        NamespacedKey confirmedKey = key(CONFIRMED_KEY);
+        if (container == null || confirmedKey == null) {
+            return true;
+        }
+
+        try {
+            Long value = container.get(confirmedKey, PersistentDataType.LONG);
+            // No tag at all means a drop created before the protection existed.
+            return value == null || value != 0L;
+        } catch (Throwable ignored) {
+            return true;
         }
     }
 

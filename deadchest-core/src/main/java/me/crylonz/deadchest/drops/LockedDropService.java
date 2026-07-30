@@ -2,6 +2,8 @@ package me.crylonz.deadchest.drops;
 
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.Permission;
+import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import me.crylonz.deadchest.integrity.PlayerDataStamp;
 import me.crylonz.deadchest.placement.GraveBlocks;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.Bukkit;
@@ -46,8 +48,18 @@ public final class LockedDropService {
     static final String OWNER_NAME_METADATA_KEY = "deadchest-drop-owner-name";
     static final String CREATION_METADATA_KEY = "deadchest-drop-created";
     static final String EXPIRATION_METADATA_KEY = "deadchest-drop-expiration";
+    static final String SEQUENCE_METADATA_KEY = "deadchest-drop-sequence";
+    static final String CONFIRMED_METADATA_KEY = "deadchest-drop-confirmed";
 
     private static final Map<UUID, LockedDrop> trackedDrops = new ConcurrentHashMap<>();
+
+    /**
+     * Sequence the player data of an owner was proven to carry at their last
+     * login. A drop stamped above that number was created by a death the server
+     * never saved, so it is a rollback duplicate. Kept per session because a drop
+     * sleeping in an unloaded chunk can only be judged once its chunk comes back.
+     */
+    private static final Map<UUID, Long> persistedSequences = new ConcurrentHashMap<>();
     private static DropTagStorage tagStorage;
 
     private LockedDropService() {
@@ -104,9 +116,26 @@ public final class LockedDropService {
         final long creationTime = System.currentTimeMillis();
         final long expirationTime = computeExpirationTime(creationTime);
 
+        // Crash protection : the death is stamped on the player data before the
+        // items leave the inventory, so a server killed before that file is
+        // written can be told apart from a death that really happened.
+        final long sequence = ChestIntegrityService.isEnabled()
+                ? ChestIntegrityService.allocateSequence(player)
+                : 0L;
+
+        if (ChestIntegrityService.isEnabled() && sequence == 0L) {
+            // No stamp means no login will ever be able to prove this death was
+            // saved, so the drops keep the historic unprotected behavior.
+            generateLog("Could not stamp [" + player.getName()
+                    + "] : reserved drops created without crash duplication protection.");
+        }
+
         for (ItemStack stack : stacksToLock) {
-            lockDrop(world.dropItemNaturally(dropLocation, stack), player.getUniqueId(), player.getName(),
-                    creationTime, expirationTime);
+            Item spawned = world.dropItemNaturally(dropLocation, stack);
+            lockDrop(spawned, player.getUniqueId(), player.getName(), creationTime, expirationTime);
+            if (sequence > 0L) {
+                stampPending(spawned, sequence);
+            }
         }
 
         sendDeathPosition(player, dropLocation);
@@ -188,6 +217,35 @@ public final class LockedDropService {
         }
 
         return storage().readExpiration(item);
+    }
+
+    /**
+     * @return sequence stamped on this drop, 0 when it carries no stamp
+     */
+    public static long getIntegritySequence(Item item) {
+        String metadata = readMetadata(item, SEQUENCE_METADATA_KEY);
+        if (metadata != null) {
+            try {
+                return Long.parseLong(metadata);
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+
+        return storage().readSequence(item);
+    }
+
+    /**
+     * @return {@code false} while the death behind this drop is still waiting for
+     * the player data to be written to disk
+     */
+    public static boolean isIntegrityConfirmed(Item item) {
+        String metadata = readMetadata(item, CONFIRMED_METADATA_KEY);
+        if (metadata != null) {
+            return !"false".equals(metadata);
+        }
+
+        return storage().readConfirmed(item);
     }
 
     public static boolean isLocked(Item item) {
@@ -309,8 +367,16 @@ public final class LockedDropService {
         long expirationTime = getExpirationTime(item);
 
         applyEntityProtections(item);
-        trackedDrops.put(item.getUniqueId(),
-                new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime));
+        LockedDrop drop = new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime);
+        drop.setIntegrity(getIntegritySequence(item), isIntegrityConfirmed(item));
+        trackedDrops.put(item.getUniqueId(), drop);
+
+        // A drop coming back from an unloaded chunk still has to be judged against
+        // the player file read at the last login of its owner.
+        Long persistedSequence = persistedSequences.get(ownerId);
+        if (persistedSequence != null) {
+            applyVerdict(drop, persistedSequence, Bukkit.getPlayer(ownerId));
+        }
     }
 
     /**
@@ -327,6 +393,171 @@ public final class LockedDropService {
         } catch (Throwable ignored) {
             // Platform without a global chunk view : chunk load events take over.
         }
+    }
+
+    /**
+     * Marks a drop as created by a death whose player side is not on disk yet.
+     *
+     * @param item     reserved drop
+     * @param sequence sequence stamped on the owner player data
+     */
+    static void stampPending(Item item, long sequence) {
+        if (item == null || sequence <= 0L) {
+            return;
+        }
+
+        storage().writeIntegrity(item, sequence, false);
+        writeIntegrityMetadata(item, sequence, false);
+
+        LockedDrop tracked = trackedDrops.get(item.getUniqueId());
+        if (tracked != null) {
+            tracked.setIntegrity(sequence, false);
+        }
+    }
+
+    /**
+     * Confirms the drops of a player whose post death state reached the disk.
+     * Mirrors what the chests do on respawn and on quit.
+     *
+     * @param player owner of the drops
+     * @return number of drops confirmed
+     */
+    public static int settleIntegrity(Player player) {
+        if (player == null || trackedDrops.isEmpty()) {
+            return 0;
+        }
+
+        int settled = 0;
+        for (LockedDrop drop : trackedDrops.values()) {
+            if (drop == null || drop.isConfirmed() || !player.getUniqueId().equals(drop.getOwnerId())) {
+                continue;
+            }
+
+            drop.setIntegrity(drop.getIntegritySequence(), true);
+            writeConfirmed(drop);
+            settled++;
+        }
+        return settled;
+    }
+
+    /**
+     * Judges the reserved drops of a reconnecting player against what their player
+     * file actually kept.
+     * <p>
+     * A drop stamped above the sequence the player data carries was created by a
+     * death the server never saved : the player came back with those items still
+     * in the inventory, so the drops on the ground are a duplicate.
+     *
+     * @param player             reconnecting player
+     * @param persistedSequence  sequence read back from the player data
+     */
+    public static void reconcileIntegrity(Player player, long persistedSequence) {
+        if (player == null) {
+            return;
+        }
+
+        persistedSequences.put(player.getUniqueId(), persistedSequence);
+
+        for (LockedDrop drop : new ArrayList<>(trackedDrops.values())) {
+            if (drop != null && player.getUniqueId().equals(drop.getOwnerId())) {
+                applyVerdict(drop, persistedSequence, player);
+            }
+        }
+    }
+
+    /**
+     * @param ownerId owner to look up
+     * @return highest sequence stamped on the drops of that owner, so the chest
+     * side keeps allocating sequences above them
+     */
+    public static long highestStampedSequence(UUID ownerId) {
+        if (ownerId == null) {
+            return 0L;
+        }
+
+        long highest = 0L;
+        for (LockedDrop drop : trackedDrops.values()) {
+            if (drop != null && ownerId.equals(drop.getOwnerId())) {
+                highest = Math.max(highest, drop.getIntegritySequence());
+            }
+        }
+        return highest;
+    }
+
+    /**
+     * Applies the login verdict to a single drop : confirmed when the player data
+     * carries its sequence, removed when the death behind it was rolled back.
+     */
+    private static void applyVerdict(LockedDrop drop, long persistedSequence, Player player) {
+        if (drop.getIntegritySequence() <= 0L) {
+            return;
+        }
+
+        if (drop.getIntegritySequence() <= persistedSequence) {
+            if (!drop.isConfirmed()) {
+                drop.setIntegrity(drop.getIntegritySequence(), true);
+                writeConfirmed(drop);
+            }
+            return;
+        }
+
+        if (!ChestIntegrityService.shouldVoidRollbackDuplicates()) {
+            generateLog("Reserved drop of [" + (player == null ? drop.getOwnerId() : player.getName())
+                    + "] comes from a death the server never saved (server crash), but '"
+                    + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep : drop kept.");
+            drop.setIntegrity(drop.getIntegritySequence(), true);
+            writeConfirmed(drop);
+            return;
+        }
+
+        removeRollbackDuplicate(drop, player);
+    }
+
+    /**
+     * Removes a drop proven to hold items the player already owns again.
+     */
+    private static void removeRollbackDuplicate(LockedDrop drop, Player player) {
+        final Location location = drop.getLocation();
+        if (location == null) {
+            trackedDrops.remove(drop.getItemId());
+            return;
+        }
+
+        DeadChestLoader.getSchedulerAdapter().executeAtLocation(location, () -> {
+            World world = drop.getWorld();
+            if (world != null) {
+                Item item = resolveItem(drop, world, location, isChunkLoaded(world, location));
+                if (item != null) {
+                    clearMetadata(item);
+                    item.remove();
+                }
+            }
+            trackedDrops.remove(drop.getItemId());
+        });
+
+        generateLog("Reserved drop of [" + (player == null ? String.valueOf(drop.getOwnerId()) : player.getName())
+                + "] removed : the death was never saved on the player side (server crash), "
+                + "its content is already back in the inventory.");
+
+        if (player != null && local != null) {
+            player.sendMessage(local.prefixed("death.drop-rollback-voided"));
+        }
+    }
+
+    private static void writeConfirmed(LockedDrop drop) {
+        final Location location = drop.getLocation();
+        final World world = drop.getWorld();
+        if (location == null || world == null) {
+            return;
+        }
+
+        DeadChestLoader.getSchedulerAdapter().executeAtLocation(location, () -> {
+            Item item = resolveItem(drop, world, location, isChunkLoaded(world, location));
+            if (item != null) {
+                storage().writeIntegrity(item, drop.getIntegritySequence(), true);
+                writeIntegrityMetadata(item, drop.getIntegritySequence(), true);
+            }
+        });
     }
 
     /**
@@ -372,6 +603,7 @@ public final class LockedDropService {
 
     public static void clearTracking() {
         trackedDrops.clear();
+        persistedSequences.clear();
     }
 
     /**
@@ -582,6 +814,19 @@ public final class LockedDropService {
         }
     }
 
+    private static void writeIntegrityMetadata(Item item, long sequence, boolean confirmed) {
+        if (plugin == null || storage().isPersistent()) {
+            return;
+        }
+
+        try {
+            item.setMetadata(SEQUENCE_METADATA_KEY, new FixedMetadataValue(plugin, String.valueOf(sequence)));
+            item.setMetadata(CONFIRMED_METADATA_KEY, new FixedMetadataValue(plugin, String.valueOf(confirmed)));
+        } catch (Throwable ignored) {
+            // Persistent tags remain the source of truth.
+        }
+    }
+
     private static void clearMetadata(Item item) {
         if (plugin == null) {
             return;
@@ -591,6 +836,8 @@ public final class LockedDropService {
             item.removeMetadata(OWNER_METADATA_KEY, plugin);
             item.removeMetadata(OWNER_NAME_METADATA_KEY, plugin);
             item.removeMetadata(CREATION_METADATA_KEY, plugin);
+            item.removeMetadata(SEQUENCE_METADATA_KEY, plugin);
+            item.removeMetadata(CONFIRMED_METADATA_KEY, plugin);
             item.removeMetadata(EXPIRATION_METADATA_KEY, plugin);
         } catch (Throwable ignored) {
             // Nothing else to clean up.

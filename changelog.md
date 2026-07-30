@@ -9,6 +9,11 @@
 - Kept the death coordinates message in vanilla drop mode
 - The respawn compass now works in vanilla drop mode: with no chest to target it points at the place where the reserved drops
   are waiting, follows the newest death, and is removed once every drop has been picked up or expired
+- Extended the crash duplication protection to the vanilla drop mode. The death is stamped on the player data before the items
+  leave the inventory, the reserved drops carry the same sequence in their persistent tags, and the next login of the owner
+  decides: the drops are confirmed when the player file kept the death, and removed as duplicates when a crash rolled it back
+  while the items came back in the inventory. `integrity.crash-protection`, `integrity.flush-player-data` and
+  `integrity.on-rollback` drive it exactly like they do for chests, and both sides now share one sequence allocator
 - Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the
   recent ones, so a click threw `IncompatibleClassChangeError` on one of the two. The inventories are now read from the event.
 - The Curse of Vanishing is now detected by enchantment key instead of the `Enchantment.VANISHING_CURSE` constant, which

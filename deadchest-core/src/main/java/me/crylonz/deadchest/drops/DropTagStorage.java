@@ -22,6 +22,12 @@ interface DropTagStorage {
 
     UUID readOwner(Item item);
 
+    void writeIntegrity(Item item, long sequence, boolean confirmed);
+
+    long readSequence(Item item);
+
+    boolean readConfirmed(Item item);
+
     long readCreation(Item item);
 
     long readExpiration(Item item);

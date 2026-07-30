@@ -24,6 +24,8 @@ public class LockedDrop {
     private double x;
     private double y;
     private double z;
+    private long integritySequence;
+    private boolean confirmed = true;
 
     public LockedDrop(UUID itemId, UUID ownerId, Location location, long creationTime, long expirationTime) {
         this.itemId = itemId;
@@ -51,6 +53,27 @@ public class LockedDrop {
      */
     public long getCreationTime() {
         return creationTime;
+    }
+
+    /**
+     * @return sequence stamped on the owner player data for this death, 0 when the
+     * drop carries no crash protection stamp
+     */
+    public long getIntegritySequence() {
+        return integritySequence;
+    }
+
+    /**
+     * @return {@code false} while the death that created this drop is still
+     * waiting for the player data to be written to disk
+     */
+    public boolean isConfirmed() {
+        return confirmed;
+    }
+
+    public void setIntegrity(long integritySequence, boolean confirmed) {
+        this.integritySequence = integritySequence;
+        this.confirmed = confirmed;
     }
 
     /**
