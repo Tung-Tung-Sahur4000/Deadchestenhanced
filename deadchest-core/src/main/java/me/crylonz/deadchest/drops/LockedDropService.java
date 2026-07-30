@@ -44,6 +44,7 @@ public final class LockedDropService {
 
     static final String OWNER_METADATA_KEY = "deadchest-drop-owner";
     static final String OWNER_NAME_METADATA_KEY = "deadchest-drop-owner-name";
+    static final String CREATION_METADATA_KEY = "deadchest-drop-created";
     static final String EXPIRATION_METADATA_KEY = "deadchest-drop-expiration";
 
     private static final Map<UUID, LockedDrop> trackedDrops = new ConcurrentHashMap<>();
@@ -100,10 +101,12 @@ public final class LockedDropService {
         }
 
         final Location dropLocation = resolveDropLocation(world, player.getLocation());
-        final long expirationTime = computeExpirationTime(System.currentTimeMillis());
+        final long creationTime = System.currentTimeMillis();
+        final long expirationTime = computeExpirationTime(creationTime);
 
         for (ItemStack stack : stacksToLock) {
-            lockDrop(world.dropItemNaturally(dropLocation, stack), player.getUniqueId(), player.getName(), expirationTime);
+            lockDrop(world.dropItemNaturally(dropLocation, stack), player.getUniqueId(), player.getName(),
+                    creationTime, expirationTime);
         }
 
         sendDeathPosition(player, dropLocation);
@@ -123,17 +126,19 @@ public final class LockedDropService {
      * @param item           dropped item entity
      * @param ownerId        player allowed to pick it up
      * @param ownerName      owner name, kept for logs and messages
+     * @param creationTime   epoch milliseconds of the death
      * @param expirationTime epoch milliseconds of removal, 0 for no expiration
      */
-    public static void lockDrop(Item item, UUID ownerId, String ownerName, long expirationTime) {
+    public static void lockDrop(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime) {
         if (item == null || ownerId == null) {
             return;
         }
 
-        writeTags(item, ownerId, ownerName, expirationTime);
+        writeTags(item, ownerId, ownerName, creationTime, expirationTime);
         applyEntityProtections(item);
 
-        trackedDrops.put(item.getUniqueId(), new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), expirationTime));
+        trackedDrops.put(item.getUniqueId(),
+                new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime));
     }
 
     /**
@@ -154,6 +159,22 @@ public final class LockedDropService {
         }
 
         return storage().readOwner(item);
+    }
+
+    /**
+     * @return epoch milliseconds of the death that created this drop, 0 when unknown
+     */
+    public static long getCreationTime(Item item) {
+        String metadata = readMetadata(item, CREATION_METADATA_KEY);
+        if (metadata != null) {
+            try {
+                return Long.parseLong(metadata);
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+
+        return storage().readCreation(item);
     }
 
     public static long getExpirationTime(Item item) {
@@ -284,10 +305,12 @@ public final class LockedDropService {
             return;
         }
 
+        long creationTime = getCreationTime(item);
         long expirationTime = getExpirationTime(item);
 
         applyEntityProtections(item);
-        trackedDrops.put(item.getUniqueId(), new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), expirationTime));
+        trackedDrops.put(item.getUniqueId(),
+                new LockedDrop(item.getUniqueId(), ownerId, item.getLocation(), creationTime, expirationTime));
     }
 
     /**
@@ -304,6 +327,43 @@ public final class LockedDropService {
         } catch (Throwable ignored) {
             // Platform without a global chunk view : chunk load events take over.
         }
+    }
+
+    /**
+     * Latest place where this player left reserved drops, so the plugin can point
+     * them back to it. A site disappears on its own once every drop of that death
+     * has been picked up or expired.
+     *
+     * @param player owner of the drops
+     * @return newest site of that player, or {@code null} when they have none
+     */
+    public static LockedDropSite latestDropSite(Player player) {
+        if (player == null) {
+            return null;
+        }
+        return latestDropSite(player.getUniqueId());
+    }
+
+    /**
+     * @param ownerId owner of the drops
+     * @return newest site of that owner, or {@code null} when they have none
+     */
+    public static LockedDropSite latestDropSite(UUID ownerId) {
+        if (ownerId == null || trackedDrops.isEmpty()) {
+            return null;
+        }
+
+        LockedDrop latest = null;
+        for (LockedDrop drop : trackedDrops.values()) {
+            if (drop == null || !ownerId.equals(drop.getOwnerId()) || drop.getLocation() == null) {
+                continue;
+            }
+            if (latest == null || drop.getCreationTime() > latest.getCreationTime()) {
+                latest = drop;
+            }
+        }
+
+        return latest == null ? null : new LockedDropSite(ownerId, latest.getLocation(), latest.getCreationTime());
     }
 
     public static int getTrackedDropAmount() {
@@ -513,12 +573,12 @@ public final class LockedDropService {
      * persistent data API is missing, to avoid keeping tags in memory for every
      * item ever dropped.
      */
-    private static void writeTags(Item item, UUID ownerId, String ownerName, long expirationTime) {
+    private static void writeTags(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime) {
         final DropTagStorage storage = storage();
-        storage.write(item, ownerId, ownerName, expirationTime);
+        storage.write(item, ownerId, ownerName, creationTime, expirationTime);
 
         if (!storage.isPersistent()) {
-            writeMetadata(item, ownerId, ownerName, expirationTime);
+            writeMetadata(item, ownerId, ownerName, creationTime, expirationTime);
         }
     }
 
@@ -530,19 +590,21 @@ public final class LockedDropService {
         try {
             item.removeMetadata(OWNER_METADATA_KEY, plugin);
             item.removeMetadata(OWNER_NAME_METADATA_KEY, plugin);
+            item.removeMetadata(CREATION_METADATA_KEY, plugin);
             item.removeMetadata(EXPIRATION_METADATA_KEY, plugin);
         } catch (Throwable ignored) {
             // Nothing else to clean up.
         }
     }
 
-    private static void writeMetadata(Item item, UUID ownerId, String ownerName, long expirationTime) {
+    private static void writeMetadata(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime) {
         if (plugin == null) {
             return;
         }
 
         try {
             item.setMetadata(OWNER_METADATA_KEY, new FixedMetadataValue(plugin, ownerId.toString()));
+            item.setMetadata(CREATION_METADATA_KEY, new FixedMetadataValue(plugin, String.valueOf(creationTime)));
             item.setMetadata(EXPIRATION_METADATA_KEY, new FixedMetadataValue(plugin, String.valueOf(expirationTime)));
             if (ownerName != null) {
                 item.setMetadata(OWNER_NAME_METADATA_KEY, new FixedMetadataValue(plugin, ownerName));

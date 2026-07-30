@@ -17,6 +17,7 @@ class PersistentDropTagStorage implements DropTagStorage {
 
     private static final String OWNER_KEY = "locked-drop-owner";
     private static final String OWNER_NAME_KEY = "locked-drop-owner-name";
+    private static final String CREATION_KEY = "locked-drop-created";
     private static final String EXPIRATION_KEY = "locked-drop-expiration";
 
     @Override
@@ -25,7 +26,7 @@ class PersistentDropTagStorage implements DropTagStorage {
     }
 
     @Override
-    public void write(Item item, UUID ownerId, String ownerName, long expirationTime) {
+    public void write(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime) {
         PersistentDataContainer container = container(item);
         NamespacedKey ownerKey = key(OWNER_KEY);
         if (container == null || ownerKey == null || ownerId == null) {
@@ -34,6 +35,7 @@ class PersistentDropTagStorage implements DropTagStorage {
 
         try {
             container.set(ownerKey, PersistentDataType.STRING, ownerId.toString());
+            container.set(key(CREATION_KEY), PersistentDataType.LONG, creationTime);
             container.set(key(EXPIRATION_KEY), PersistentDataType.LONG, expirationTime);
             if (ownerName != null) {
                 container.set(key(OWNER_NAME_KEY), PersistentDataType.STRING, ownerName);
@@ -58,16 +60,25 @@ class PersistentDropTagStorage implements DropTagStorage {
     }
 
     @Override
+    public long readCreation(Item item) {
+        return readLong(item, CREATION_KEY);
+    }
+
+    @Override
     public long readExpiration(Item item) {
+        return readLong(item, EXPIRATION_KEY);
+    }
+
+    private long readLong(Item item, String rawKey) {
         PersistentDataContainer container = container(item);
-        NamespacedKey expirationKey = key(EXPIRATION_KEY);
-        if (container == null || expirationKey == null) {
+        NamespacedKey namespacedKey = key(rawKey);
+        if (container == null || namespacedKey == null) {
             return 0L;
         }
 
         try {
-            Long expiration = container.get(expirationKey, PersistentDataType.LONG);
-            return expiration == null ? 0L : expiration;
+            Long value = container.get(namespacedKey, PersistentDataType.LONG);
+            return value == null ? 0L : value;
         } catch (Throwable ignored) {
             return 0L;
         }

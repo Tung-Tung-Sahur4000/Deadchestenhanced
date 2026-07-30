@@ -18,9 +18,11 @@ interface DropTagStorage {
      */
     boolean isPersistent();
 
-    void write(Item item, UUID ownerId, String ownerName, long expirationTime);
+    void write(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime);
 
     UUID readOwner(Item item);
+
+    long readCreation(Item item);
 
     long readExpiration(Item item);
 

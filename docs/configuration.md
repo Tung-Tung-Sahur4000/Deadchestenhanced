@@ -73,6 +73,8 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 What still works in this mode:
 
 - `messages.display-position-on-death` sends the coordinates of the drops on death.
+- `respawn.compass` hands out the compass on respawn as usual, pointing at the reserved drops instead of a chest. It is
+  retargeted, and removed once every drop has been picked up or expired, exactly like it is for a chest.
 - The vanilla recovery compass keeps pointing at the death location, the plugin never cancels the death itself.
 - `filters.ignored-items` entries are left to vanilla or to another plugin, they are never locked.
 - Early exits still apply first: `chest.*` limits are irrelevant here, but excluded worlds, creative mode, The End and `pvp.keep-inventory-on-player-kill` keep their usual behavior.

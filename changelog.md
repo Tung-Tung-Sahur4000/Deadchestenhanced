@@ -7,6 +7,8 @@
 - Added optional invulnerability and glowing outline for reserved drops (`vanilla-drop.invulnerable`, `vanilla-drop.glow`)
 - Added the `deadchest.dropPass` permission to bypass reserved drops
 - Kept the death coordinates message in vanilla drop mode
+- The respawn compass now works in vanilla drop mode: with no chest to target it points at the place where the reserved drops
+  are waiting, follows the newest death, and is removed once every drop has been picked up or expired
 - Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the
   recent ones, so a click threw `IncompatibleClassChangeError` on one of the two. The inventories are now read from the event.
 - The Curse of Vanishing is now detected by enchantment key instead of the `Enchantment.VANISHING_CURSE` constant, which

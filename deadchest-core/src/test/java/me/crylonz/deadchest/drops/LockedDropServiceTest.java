@@ -80,7 +80,7 @@ class LockedDropServiceTest {
 
     private Item dropOf(UUID ownerId, long expirationTime) {
         Item item = world.dropItemNaturally(new Location(world, 0, 65, 0), new ItemStack(Material.DIAMOND, 1));
-        LockedDropService.lockDrop(item, ownerId, "Steve", expirationTime);
+        LockedDropService.lockDrop(item, ownerId, "Steve", System.currentTimeMillis(), expirationTime);
         return item;
     }
 

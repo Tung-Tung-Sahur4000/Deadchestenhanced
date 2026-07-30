@@ -18,16 +18,18 @@ public class LockedDrop {
     private final UUID itemId;
     private final UUID ownerId;
     private final UUID worldId;
+    private final long creationTime;
     private final long expirationTime;
 
     private double x;
     private double y;
     private double z;
 
-    public LockedDrop(UUID itemId, UUID ownerId, Location location, long expirationTime) {
+    public LockedDrop(UUID itemId, UUID ownerId, Location location, long creationTime, long expirationTime) {
         this.itemId = itemId;
         this.ownerId = ownerId;
         this.worldId = location != null && location.getWorld() != null ? location.getWorld().getUID() : null;
+        this.creationTime = creationTime;
         this.expirationTime = expirationTime;
         if (location != null) {
             this.x = location.getX();
@@ -42,6 +44,13 @@ public class LockedDrop {
 
     public UUID getOwnerId() {
         return ownerId;
+    }
+
+    /**
+     * @return epoch milliseconds of the death that created this drop
+     */
+    public long getCreationTime() {
+        return creationTime;
     }
 
     /**

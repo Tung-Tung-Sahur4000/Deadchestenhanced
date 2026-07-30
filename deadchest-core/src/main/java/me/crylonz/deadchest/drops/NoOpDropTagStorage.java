@@ -16,13 +16,18 @@ class NoOpDropTagStorage implements DropTagStorage {
     }
 
     @Override
-    public void write(Item item, UUID ownerId, String ownerName, long expirationTime) {
+    public void write(Item item, UUID ownerId, String ownerName, long creationTime, long expirationTime) {
         // Nothing to persist.
     }
 
     @Override
     public UUID readOwner(Item item) {
         return null;
+    }
+
+    @Override
+    public long readCreation(Item item) {
+        return 0L;
     }
 
     @Override
