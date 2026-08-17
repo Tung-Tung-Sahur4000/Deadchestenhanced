@@ -68,7 +68,7 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 | `vanilla-drop.rescue-void-deaths`    | boolean | `true`  | Bring the items of a death below the world back to the surface. `false` leaves them to the void, which destroys them exactly like vanilla Minecraft does. |
 | `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too. `false` leaves the drops open to everybody, mobs and hoppers included. |
 | `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
-| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
+| `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Hold the vanilla despawn timer back so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
 | `vanilla-drop.invulnerable`          | boolean | `false` | Make reserved drops immune to fire, lava, explosions and cactus.                                                |
 | `vanilla-drop.glow`                  | boolean | `false` | Add a glowing outline on reserved drops.                                                                        |
 
@@ -238,7 +238,11 @@ does not expire and it does not drop its content.
 
 | Key                                 | Type    | Default | Description                                                 |
 |-------------------------------------|---------|---------|-------------------------------------------------------------|
-| `pvp.keep-inventory-on-player-kill` | boolean | `false` | On PvP death: keep inventory and skip DeadChest generation. |
+| `pvp.keep-inventory-on-player-kill` | boolean | `false` | On PvP death: keep inventory, drop nothing, skip DeadChest generation. A player killed by their own hand (own TNT, own projectile, `/kill` on themselves) is not a PvP death. Keeps the items only, experience still drops. |
+| `pvp.keep-inventory-worlds`         | list    | `[]`    | Where the option above applies. Empty = everywhere. An entry is a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`). Listing `OVERWORLD` and `NETHER` leaves the end at full stakes. |
+
+The PvP case is decided before `filters.excluded-worlds`, `generation.allow-in-end-worlds` and
+`generation.allow-in-creative`: those say where a grave may be placed, not what a player kill does with the items.
 
 ### Integrations
 

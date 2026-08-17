@@ -18,7 +18,11 @@ It is designed for Minecraft Java Edition servers and primarily targets Bukkit, 
 ## Features
 
 - Store a player's inventory in a chest on death instead of dropping items on the ground
-- Or keep vanilla death drops with `vanilla-drop`, reserved to the dead player and protected from despawn
+- Or keep vanilla death drops with `vanilla-drop`, reserved to the dead player and held back from the despawn timer
+- Run both modes on one server: `vanilla-drop.worlds` takes a world name or a whole dimension, and a world left out
+  falls back to the normal chest behavior
+- Keep the inventory on PvP deaths (`pvp.keep-inventory-on-player-kill`), scoped the same way, so the end can stay at
+  full stakes while the rest of the map is forgiving
 - Support modern Bukkit-based server software including Paper, Spigot, and Purpur
 - Provide admin tools to inspect, remove, repair, and give back DeadChests
 - Offer configurable behavior, localization, and optional integrations such as WorldGuard

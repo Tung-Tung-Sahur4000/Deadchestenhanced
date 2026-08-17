@@ -30,8 +30,10 @@ With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
 
 - items are spread on the ground at the death point, like vanilla
 - the drops stay reserved for the dead player, nobody else, no mob and no hopper can take them
-- the vanilla despawn timer (`item-despawn-rate` in `spigot.yml`, 5 minutes by default) is cancelled, `vanilla-drop.despawn-seconds` decides when the drops disappear
+- the vanilla despawn timer (`item-despawn-rate` in `spigot.yml`, 5 minutes by default) is held back, so `vanilla-drop.despawn-seconds` decides when the drops disappear. DeadChest warns in console, and in chat to an operator joining, when that rate is shorter than the configured lifetime: raising it is the real fix, the plugin only holds the drops meanwhile
 - that countdown runs in real time, so an unloaded chunk or a player far away does not freeze it
+- `vanilla-drop.worlds` scopes the mode: a world left out falls back to the normal chest behavior, so graves and reserved drops can run side by side
+- a death below the world destroys the items like vanilla unless `vanilla-drop.rescue-void-deaths` brings them back to the surface
 - the death coordinates message and the vanilla recovery compass still point to the drops
 - the respawn compass (`respawn.compass`) targets the drop site, and disappears once the drops are gone
 - the crash protection covers the drops: a server killed without saving cannot leave the items both in the inventory and on
@@ -40,6 +42,7 @@ With `vanilla-drop.enabled: true`, DeadChest stops creating chests entirely:
 The lock is stored on the item entities themselves, so it survives a chunk unload and a server restart.
 Walking far away does not destroy anything: the items are saved with their chunk like vanilla and come back with it.
 The only thing that removes them is `vanilla-drop.despawn-seconds`, so a player returning later than that finds the spot empty, exactly like an expired DeadChest.
+An item clearing plugin is not covered by any of this: it removes entities directly, so exclude the `deadchest:locked-drop-owner` tag in its own configuration.
 Set `vanilla-drop.despawn-seconds: 0` to keep the drops until somebody picks them up.
 
 ### Hologram states
