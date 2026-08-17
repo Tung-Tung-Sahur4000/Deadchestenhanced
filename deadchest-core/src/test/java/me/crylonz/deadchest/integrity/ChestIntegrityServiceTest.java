@@ -139,15 +139,21 @@ class ChestIntegrityServiceTest {
     }
 
     @Test
-    void reconcileKeepsTheDuplicateWhenConfiguredToDoSo() {
+    void aProvenDuplicateIsAlwaysVoided() {
+        // Keeping the duplicate left two copies of the same items on the server,
+        // which made a crash a way to duplicate on purpose. The option is gone, so
+        // a config still carrying it decides nothing.
+        // The removal itself runs against a real item entity in LockedDropIntegrityTest :
+        // MockBukkit leaves the chest removal path unimplemented, which aborts a test
+        // rather than failing it.
         when(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK)).thenReturn("keep");
-        ChestData chest = crashedDeath(16);
-        world.getBlockAt(chest.getChestLocation()).setType(Material.CHEST);
+        assertTrue(ChestIntegrityService.shouldVoidRollbackDuplicates(), "'keep' is no longer honored");
 
-        ChestIntegrityService.reconcile(player);
+        when(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK)).thenReturn("void");
+        assertTrue(ChestIntegrityService.shouldVoidRollbackDuplicates());
 
-        assertSame(chest, DeadChestLoader.getChestDataCache().getChestData(chest.getChestLocation()));
-        assertEquals(ChestIntegrityState.CONFIRMED, chest.getIntegrityState());
+        when(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK)).thenReturn(null);
+        assertTrue(ChestIntegrityService.shouldVoidRollbackDuplicates(), "A missing value voids too");
     }
 
     @Test

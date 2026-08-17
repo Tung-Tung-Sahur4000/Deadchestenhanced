@@ -100,6 +100,71 @@ chest:
       # Any player can loot during public phase.
       other-players: true
 
+vanilla-drop:
+  # The point of this mode is that the items behave the way the game makes them
+  # behave. Who may pick a drop up and how long it lasts are the only deviations,
+  # so the options that rework what a player loses on death are NOT applied here:
+  # 'filters.excluded-items', 'durability.loss-on-death-percent', 'xp.store-*'
+  # and 'permissions.require-generate' belong to the chest mode. A world that
+  # falls back to a grave through 'worlds' below gets all of them as usual.
+  #
+  # Disables DeadChest generation and keeps vanilla death drops instead.
+  # true  = no chest, no hologram: items are spread on the ground like vanilla,
+  #         but they stay reserved for the dead player and are protected from despawn.
+  # false = normal DeadChest behavior.
+  # The death coordinates message ('messages.display-position-on-death') still works,
+  # and the vanilla recovery compass keeps pointing at the death location.
+  enabled: false
+
+  # Where the vanilla drop mode applies.
+  # Empty list = everywhere 'enabled' is true (default).
+  # An entry is either a world name or a whole dimension:
+  #   OVERWORLD (or NORMAL), NETHER (or THE_NETHER), END (or THE_END)
+  # A world left out of this list falls back to the normal DeadChest behavior,
+  # so both modes can run on the same server. For example, graves everywhere
+  # except the end, where the items stay on the ground:
+  #   worlds:
+  #     - END
+  # This list is the only thing that scopes the mode. The generation options
+  # ('filters.excluded-worlds', 'generation.allow-in-end-worlds',
+  # 'generation.allow-in-creative') only say where a grave may be placed and
+  # have no effect here.
+  worlds: []
+
+  # What happens to the items when a player dies below the world (the void).
+  # true  = the items are brought back to the surface and reserved as usual
+  # false = the items are left to the void and destroyed, like real Minecraft
+  # Vanilla Minecraft destroys everything you were carrying when you fall out of
+  # the world. 'false' keeps that, so a void death still costs the inventory.
+  rescue-void-deaths: true
+
+  # Restrict the drops to the player who died.
+  # true  = only the owner can pick them up, mobs and hoppers are blocked too
+  # false = anyone can pick them up (drops are only protected from despawn)
+  # Bypass permissions: 'deadchest.dropPass', 'deadchest.chestPass'
+  owner-only-pickup: true
+
+  # Lifetime in seconds of the reserved drops.
+  # The countdown uses real time, so it keeps running while the chunk is unloaded
+  # or while the player is far away.
+  # 0 = drops never disappear
+  despawn-seconds: 300
+
+  # Cancel the vanilla despawn timer for reserved drops.
+  # true  = drops only disappear when 'despawn-seconds' is reached
+  # false = vanilla despawn applies, whichever comes first
+  # Careful with false: the vanilla timer is 5 minutes by default, but it is the
+  # 'item-despawn-rate' of spigot.yml, which many servers lower. A value below
+  # 'despawn-seconds' x 20 removes the drops before the lifetime set here.
+  protect-from-despawn: true
+
+  # Make reserved drops immune to fire, lava, explosions and cactus.
+  # false = vanilla behavior, items can still be destroyed
+  invulnerable: false
+
+  # Add a glowing outline on reserved drops to find them back easily.
+  glow: false
+
 permissions:
   # Require permission to generate a DeadChest on death.
   # Required permission when true: 'deadchest.generate'
@@ -144,11 +209,13 @@ integrity:
   # false = only detect duplicates, without forcing a save
   flush-player-data: true
 
-  # What to do with a deadchest proven to be a crash duplicate, meaning the
-  # player reconnected with the items the chest holds still in the inventory.
-  # void = delete the duplicated chest (recommended)
-  # keep = keep the chest and only log a warning, for manual review
-  on-rollback: void
+  # A deadchest or a reserved drop proven to be a crash duplicate is always
+  # destroyed. Proven means the player reconnected with those exact items still
+  # in their inventory, so the copy on the server is the extra one and deleting
+  # it costs them nothing. The copy destroyed is always the one on the server
+  # side: what a player holds is never touched.
+  # There is no option to keep it. Keeping it left two copies of the same items
+  # on the server, which turned a crash into a way to duplicate on purpose.
 
 respawn:
   # Give a compass pointing at the latest DeadChest when a player respawns.
@@ -251,9 +318,30 @@ xp:
 
 pvp:
   # Behavior for PvP deaths (killed by another player):
-  # true  = keep inventory, no DeadChest generated
+  # true  = keep inventory, no DeadChest generated and nothing dropped
   # false = normal plugin behavior
+  # A player killed by their own hand (own TNT, own projectile, '/kill' on
+  # themselves) is not a PvP death and follows the normal behavior below.
+  # This is decided before 'excluded-worlds', 'generate-in-the-end' and
+  # 'generate-deadchest-in-creative': those three only turn the grave generation
+  # off, a PvP death still keeps the inventory wherever it happens.
+  # Combine with 'vanilla-drop.enabled: true' to get PvP deaths keeping the
+  # inventory while every other death drops on the ground like vanilla.
+  # Note: this keeps the items only. Experience still drops, exactly like the
+  # vanilla 'keepInventory' gamerule left off.
   keep-inventory-on-player-kill: false
+
+  # Where 'keep-inventory-on-player-kill' applies.
+  # Empty list = everywhere (default).
+  # An entry is either a world name or a whole dimension:
+  #   OVERWORLD (or NORMAL), NETHER (or THE_NETHER), END (or THE_END)
+  # A dimension covers every world of that kind, so renamed worlds and the extra
+  # end worlds of a multi world setup are included without listing them.
+  # Leaving the end out keeps the dragon fight and end raids at full stakes:
+  #   keep-inventory-worlds:
+  #     - OVERWORLD
+  #     - NETHER
+  keep-inventory-worlds: []
 
 integrations:
   worldguard:
@@ -359,4 +447,5 @@ filters:
 # deadchest.remove.other  -> Remove another player's DeadChests with '/dc remove <player>'.
 # deadchest.giveback      -> Give back another player's items with '/dc giveback <player>'.
 # deadchest.chestPass     -> Bypass owner-only chest access.
+# deadchest.dropPass      -> Pick up drops reserved to another player in vanilla drop mode.
 # deadchest.infinityChest -> Create infinite DeadChests (not affected by duration-seconds timeout).

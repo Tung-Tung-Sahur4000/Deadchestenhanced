@@ -31,6 +31,7 @@ This page documents the current `/dc` commands and permission nodes.
 | `deadchest.generate`      | Generate a DeadChest on death (if required by config).                               |
 | `deadchest.get`           | Claim/retrieve a DeadChest (if required by config).                                  |
 | `deadchest.chestPass`     | Bypass owner-only chest access.                                                      |
+| `deadchest.dropPass`      | Pick up drops reserved to another player in vanilla drop mode.                       |
 | `deadchest.infinityChest` | Create infinite DeadChests.                                                          |
 | `deadchest.remove.own`    | Remove own DeadChests with `/dc remove`.                                             |
 | `deadchest.remove.other`  | Remove another player's DeadChests with `/dc remove <player>`.                       |

@@ -1,7 +1,9 @@
 package me.crylonz.deadchest.listener;
 
 import me.crylonz.deadchest.DeadChestLoader;
+import me.crylonz.deadchest.drops.DespawnRateAdvisor;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -9,6 +11,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+
+import java.util.List;
 
 /**
  * Keeps the deadchest storage in sync with the player files.
@@ -55,5 +59,30 @@ public class PlayerIntegrityListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         ChestIntegrityService.reconcile(event.getPlayer());
+        warnOperatorAboutDespawnRate(event.getPlayer());
+    }
+
+    /**
+     * Tells an operator joining the server that spigot.yml would take the reserved
+     * drops away before their configured lifetime. Console says it once at startup,
+     * which scrolls away, so the people who can act on it are told in game too.
+     *
+     * @param player player who just joined
+     */
+    private void warnOperatorAboutDespawnRate(Player player) {
+        if (player == null || !player.isOp()) {
+            return;
+        }
+
+        final List<String> mismatches = DespawnRateAdvisor.findMismatches();
+        if (mismatches.isEmpty()) {
+            return;
+        }
+
+        player.sendMessage(ChatColor.RED + "[DeadChest] " + ChatColor.YELLOW
+                + "The server despawn timer is shorter than the reserved drop lifetime:");
+        for (String mismatch : mismatches) {
+            player.sendMessage(ChatColor.YELLOW + " - " + mismatch);
+        }
     }
 }

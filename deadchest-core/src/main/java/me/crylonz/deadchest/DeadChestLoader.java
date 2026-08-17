@@ -6,6 +6,8 @@ import me.crylonz.deadchest.compass.GraveCompassService;
 import me.crylonz.deadchest.db.*;
 import me.crylonz.deadchest.deps.worldguard.WorldGuardSoftDependenciesChecker;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import me.crylonz.deadchest.drops.DespawnRateAdvisor;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.legacy.OldChestData;
 import me.crylonz.deadchest.scheduler.SchedulerAdapter;
 import me.crylonz.deadchest.scheduler.SchedulerTaskHandle;
@@ -55,6 +57,7 @@ public class DeadChestLoader {
     private SchedulerTaskHandle maintenanceTask;
     private SchedulerTaskHandle animationTask;
     private SchedulerTaskHandle compassTask;
+    private SchedulerTaskHandle lockedDropTask;
     private static SchedulerAdapter scheduler;
     private static Plugin schedulerPluginOwner;
 
@@ -86,6 +89,10 @@ public class DeadChestLoader {
         }, plugin);
 
         registerConfig();
+        // Before initializeConfig : the migration rewrites config.yml from the
+        // current template, which drops the retired key, so reading it afterwards
+        // would never see what the server actually had.
+        warnAboutRetiredRollbackKeep();
         initializeConfig();
 
         if (config.getBoolean(ConfigKey.AUTO_CLEANUP_ON_START)) {
@@ -110,12 +117,31 @@ public class DeadChestLoader {
         if (shulkerBox != null)
             graveBlocks.add(shulkerBox);
 
+        // Reserved drops left by a previous session are found back in already loaded chunks
+        LockedDropService.trackDropsOfLoadedChunks();
+
         Objects.requireNonNull(javaPlugin.getCommand("dc"), "Command dc not found")
                 .setExecutor(new DCCommandExecutor(this));
 
         Objects.requireNonNull(javaPlugin.getCommand("dc")).setTabCompleter(new DCTabCompletion());
 
         launchRepeatingTask();
+        warnAboutShortDespawnRate();
+    }
+
+    /**
+     * Says once at startup that spigot.yml would remove the reserved drops before
+     * the lifetime the vanilla drop mode announces. Operators are told again in
+     * chat when they join, because this line scrolls away.
+     */
+    private void warnAboutShortDespawnRate() {
+        if (log == null) {
+            return;
+        }
+
+        for (String mismatch : DespawnRateAdvisor.findMismatches()) {
+            log.warning("[DeadChest] " + mismatch);
+        }
     }
 
 
@@ -148,6 +174,8 @@ public class DeadChestLoader {
         scheduler.cancelTask(maintenanceTask);
         scheduler.cancelTask(animationTask);
         scheduler.cancelTask(compassTask);
+        scheduler.cancelTask(lockedDropTask);
+        LockedDropService.clearTracking();
 
         ChestDataRepository.saveAllAsync(getChestDataCache().getAllChestData().values());
         sqlExecutor.shutdown();
@@ -213,6 +241,12 @@ public class DeadChestLoader {
         config.register(ConfigKey.LOOT_PUBLIC_ACCESS_OWNER.toString(), true);
         config.register(ConfigKey.LOOT_PUBLIC_ACCESS_KILLER.toString(), true);
         config.register(ConfigKey.LOOT_PUBLIC_ACCESS_OTHER_PLAYERS.toString(), true);
+        config.register(ConfigKey.VANILLA_DROP_ENABLED.toString(), false);
+        config.register(ConfigKey.VANILLA_DROP_OWNER_ONLY_PICKUP.toString(), true);
+        config.register(ConfigKey.VANILLA_DROP_DESPAWN_SECONDS.toString(), 300);
+        config.register(ConfigKey.VANILLA_DROP_PROTECT_FROM_DESPAWN.toString(), true);
+        config.register(ConfigKey.VANILLA_DROP_INVULNERABLE.toString(), false);
+        config.register(ConfigKey.VANILLA_DROP_GLOW.toString(), false);
         config.register(ConfigKey.WORLD_GUARD_DETECTION.toString(), false);
         config.register(ConfigKey.WORLD_GUARD_FLAG_DEFAULT.toString(), false);
         config.register(ConfigKey.DROP_MODE.toString(), "inventory-then-ground");
@@ -245,6 +279,9 @@ public class DeadChestLoader {
         config.register(ConfigKey.STORE_XP.toString(), false);
         config.register(ConfigKey.STORE_XP_PERCENTAGE.toString(), 100);
         config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH.toString(), false);
+        config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS.toString(), Collections.emptyList());
+        config.register(ConfigKey.VANILLA_DROP_WORLDS.toString(), Collections.emptyList());
+        config.register(ConfigKey.VANILLA_DROP_RESCUE_VOID_DEATHS.toString(), true);
         config.register(ConfigKey.LOCALIZATION_LANGUAGE.toString(), "en");
         config.register(ConfigKey.REPLACE_OLDEST.toString(), false);
         config.register(ConfigKey.PLACEMENT_SAFE_LOCATION.toString(), true);
@@ -261,7 +298,29 @@ public class DeadChestLoader {
         config.register(ConfigKey.RESPAWN_COMPASS_UPDATE_SECONDS.toString(), 5);
         config.register(ConfigKey.INTEGRITY_PROTECTION_ENABLED.toString(), true);
         config.register(ConfigKey.INTEGRITY_FLUSH_PLAYER_DATA.toString(), true);
-        config.register(ConfigKey.INTEGRITY_ON_ROLLBACK.toString(), "void");
+    }
+
+    /**
+     * 'integrity.on-rollback: keep' left the duplicate on the server next to the
+     * copy the player already held, which made a crash a way to duplicate items on
+     * purpose. A proven duplicate is always destroyed now, so a config still
+     * asking to keep it says so once instead of changing behavior in silence.
+     * <p>
+     * Read straight from the file rather than through a registered key: the
+     * migration writes every registered key back into config.yml, which would put
+     * this one back in the file of every server that upgrades.
+     */
+    private void warnAboutRetiredRollbackKeep() {
+        if (plugin == null || log == null) {
+            return;
+        }
+
+        if ("keep".equalsIgnoreCase(plugin.getConfig().getString(ConfigKey.INTEGRITY_ON_ROLLBACK.toString()))) {
+            log.warning("[DeadChest] '" + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep, which is no longer "
+                    + "honored : a chest or a reserved drop proven to be a crash duplicate is always destroyed, "
+                    + "because keeping it left two copies of the same items on the server. The option can be "
+                    + "removed from config.yml.");
+        }
     }
 
     private void initializeConfig() {
@@ -341,6 +400,8 @@ public class DeadChestLoader {
         // server owner configured rather than on every chest change.
         final long compassInterval = GraveCompassService.updateIntervalTicks();
         compassTask = scheduler.runGlobalRepeating(GraveCompassService::refreshAll, compassInterval, compassInterval);
+        // Runs even when the vanilla drop mode is off, so drops locked earlier still expire.
+        lockedDropTask = scheduler.runGlobalRepeating(LockedDropService::tick, 20L, 20L);
     }
 
     public static void handleAnimationEvent() {

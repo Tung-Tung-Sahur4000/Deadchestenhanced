@@ -2,6 +2,8 @@ package me.crylonz.deadchest.compass;
 
 import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
+import me.crylonz.deadchest.drops.LockedDropService;
+import me.crylonz.deadchest.drops.LockedDropSite;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -28,6 +30,10 @@ import static me.crylonz.deadchest.DeadChestLoader.local;
  * The compass is a plugin item, not loot: it is given on respawn, retargeted at
  * a fixed interval, cannot leave the inventory it was given in, and disappears
  * as soon as the player has no chest left to walk back to.
+ * <p>
+ * When the vanilla drop mode replaces the chests, the destination is the place
+ * where the reserved drops are waiting instead, so the compass keeps working with
+ * no chest at all.
  */
 public final class GraveCompassService {
 
@@ -67,7 +73,7 @@ public final class GraveCompassService {
             return;
         }
 
-        final ChestData target = latestChest(player);
+        final GraveCompassTarget target = latestTarget(player);
         if (target == null) {
             return;
         }
@@ -94,7 +100,7 @@ public final class GraveCompassService {
             }
         }
 
-        pointVanillaCompass(player, target.getChestLocation());
+        pointVanillaCompass(player, target.location());
         player.sendMessage(local.prefixed("compass.received"));
     }
 
@@ -110,7 +116,7 @@ public final class GraveCompassService {
         }
 
         final int slot = findCompassSlot(player);
-        final ChestData target = latestChest(player);
+        final GraveCompassTarget target = latestTarget(player);
 
         if (target == null) {
             if (slot != -1) {
@@ -129,22 +135,22 @@ public final class GraveCompassService {
         if (retargeted != null) {
             player.getInventory().setItem(slot, retargeted);
         }
-        pointVanillaCompass(player, target.getChestLocation());
+        pointVanillaCompass(player, target.location());
     }
 
     /**
      * @param compass compass currently held
-     * @param target  chest it should point at
+     * @param target  destination it should point at
      * @return {@code true} when the compass is already up to date
      */
-    private static boolean alreadyTargets(final ItemStack compass, final ChestData target) {
-        if (compass == null || !compass.hasItemMeta() || target.getDeathId() == null) {
+    private static boolean alreadyTargets(final ItemStack compass, final GraveCompassTarget target) {
+        if (compass == null || !compass.hasItemMeta() || target.id() == null) {
             return false;
         }
         try {
             final ItemMeta meta = compass.getItemMeta();
             final String storedTarget = meta == null ? null : meta.getPersistentDataContainer().get(targetKey(), PersistentDataType.STRING);
-            return target.getDeathId().toString().equals(storedTarget);
+            return target.id().equals(storedTarget);
         } catch (Throwable ignored) {
             return false;
         }
@@ -268,6 +274,31 @@ public final class GraveCompassService {
     }
 
     /**
+     * Newest place this player has to walk back to : a DeadChest, or the reserved
+     * drops of the vanilla drop mode. Both are considered, so a server that just
+     * switched modes still points at whichever came last.
+     *
+     * @param player player to inspect
+     * @return destination of the compass, or {@code null} when there is nothing left
+     */
+    @Nullable
+    public static GraveCompassTarget latestTarget(final Player player) {
+        if (player == null) {
+            return null;
+        }
+
+        GraveCompassTarget target = GraveCompassTarget.ofChest(latestChest(player));
+
+        final LockedDropSite site = LockedDropService.latestDropSite(player);
+        final GraveCompassTarget dropTarget = GraveCompassTarget.ofDropSite(site);
+        if (dropTarget != null && (target == null || dropTarget.timeMillis() > target.timeMillis())) {
+            target = dropTarget;
+        }
+
+        return target;
+    }
+
+    /**
      * Builds the compass item targeting a chest.
      *
      * @param target chest to point at
@@ -276,6 +307,22 @@ public final class GraveCompassService {
      */
     @Nullable
     public static ItemStack createCompass(final ChestData target) {
+        return createCompass(GraveCompassTarget.ofChest(target));
+    }
+
+    /**
+     * Builds the compass item targeting a chest or a reserved drop site.
+     *
+     * @param target destination to point at
+     * @return tagged compass, or {@code null} when this server cannot carry the
+     * tag that identifies it as a plugin item
+     */
+    @Nullable
+    public static ItemStack createCompass(final GraveCompassTarget target) {
+        if (target == null) {
+            return null;
+        }
+
         final ItemStack compass = new ItemStack(Material.COMPASS, 1);
         final ItemMeta meta = compass.getItemMeta();
         if (meta == null) {
@@ -284,11 +331,11 @@ public final class GraveCompassService {
 
         meta.setDisplayName(local.get("compass.name"));
 
-        final Location location = target.getChestLocation();
+        final Location location = target.location();
         final List<String> lore = new ArrayList<>();
         lore.add(local.format("compass.lore",
                 location.getBlockX(), location.getBlockY(), location.getBlockZ(),
-                location.getWorld() == null ? target.getWorldName() : location.getWorld().getName()));
+                target.worldName()));
         meta.setLore(lore);
 
         if (!tag(meta, target)) {
@@ -306,11 +353,11 @@ public final class GraveCompassService {
      * @return {@code false} when the server has no persistent data container,
      * which is the case before Minecraft 1.14
      */
-    private static boolean tag(final ItemMeta meta, final ChestData target) {
+    private static boolean tag(final ItemMeta meta, final GraveCompassTarget target) {
         try {
             meta.getPersistentDataContainer().set(key(), PersistentDataType.BYTE, (byte) 1);
-            if (target.getDeathId() != null) {
-                meta.getPersistentDataContainer().set(targetKey(), PersistentDataType.STRING, target.getDeathId().toString());
+            if (target.id() != null) {
+                meta.getPersistentDataContainer().set(targetKey(), PersistentDataType.STRING, target.id());
             }
             return true;
         } catch (Throwable t) {

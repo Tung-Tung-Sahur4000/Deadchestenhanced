@@ -8,7 +8,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import static me.crylonz.deadchest.DeadChestLoader.*;
@@ -17,19 +16,22 @@ public class InventoryClickListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent event) {
-        if (!isDeadchestGui(event.getView())) return;
+        // Read the inventories from the event : InventoryView is a class on old
+        // servers and an interface on recent ones, calling it directly would break
+        // on one of the two.
+        final Inventory topInventory = event.getInventory();
+        if (!isDeadchestGui(topInventory)) return;
         if (!(event.getWhoClicked() instanceof Player)) return;
 
         event.setCancelled(true);
 
-        final InventoryView view = event.getView();
         final Inventory clickedInv = event.getClickedInventory();
         final int slot = event.getSlot();
 
         if (clickedInv == null) return;
 
         // first case : removing item from ignore list
-        if (clickedInv == view.getTopInventory()) {
+        if (clickedInv == topInventory) {
             final ItemStack clicked = event.getCurrentItem();
             if (clicked == null || clicked.getType().isAir()) return;
 
@@ -47,7 +49,7 @@ public class InventoryClickListener implements Listener {
         }
 
         // second case : adding item to ignore list
-        if (clickedInv == view.getBottomInventory()) {
+        if (clickedInv == event.getWhoClicked().getInventory()) {
             final ItemStack src = event.getCurrentItem();
             if (src == null || src.getType().isAir()) return;
 
@@ -63,8 +65,8 @@ public class InventoryClickListener implements Listener {
     }
 
 
-    private boolean isDeadchestGui(InventoryView view) {
-        return view.getTopInventory().getHolder() instanceof IgnoreInventoryHolder;
+    private boolean isDeadchestGui(Inventory topInventory) {
+        return topInventory != null && topInventory.getHolder() instanceof IgnoreInventoryHolder;
     }
 
     private boolean containsSimilarIgnoreItem(ItemStack candidate) {

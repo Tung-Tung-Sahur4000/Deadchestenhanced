@@ -1,3 +1,82 @@
+## Deadchest 4.31.0 - 2026-08-17
+
+- Fixed reserved drops disappearing before their configured lifetime on any server that lowers `item-despawn-rate` in
+  spigot.yml. The despawn protection now holds the drops by resetting their age on every maintenance pass and cancelling
+  the despawn event, which was measured on Paper 1.21.4 holding a drop for the full `vanilla-drop.despawn-seconds` with
+  `item-despawn-rate` set to `100` ticks, six times shorter. The drops stay ordinary item entities the server still owns:
+  they are not marked as living forever, so removing DeadChest can never leave items that nothing will clean up
+- Added a startup and in game warning when spigot.yml would remove the reserved drops before their configured lifetime.
+  The console reports one line per world in scope at startup, and an operator joining the server is told in chat, since
+  the startup line scrolls away. Both name the world, the current `item-despawn-rate`, the configured lifetime and the
+  value to raise the rate to
+- Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
+  TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
+  keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Fixed the retired `integrity.on-rollback` being written back into `config.yml` by the configuration migration. Every
+  registered key is restored into the regenerated file, so a server upgrading to this version, which migrates because the
+  new keys are missing, got the dead option back in its config with the value it used to have. The key is no longer
+  registered and is read straight from the file for the startup warning, which now runs before the migration so the
+  warning is still shown on the upgrade that removes it
+- A deadchest or a reserved drop proven to be a crash duplicate is now always destroyed, and `integrity.on-rollback` is
+  retired. Its `keep` value left the duplicate on the server next to the copy the player had just got back, so a crash, or
+  a crash caused on purpose, was a way to end up with two sets of the same items. A config still carrying the option logs a
+  warning once at startup and changes nothing. The copy destroyed is always the server side one, the chest or the reserved
+  drop: what a player holds is never touched
+- Added `vanilla-drop.rescue-void-deaths`, default `true`. A death below the world had its items pulled back up to the
+  surface and reserved, with no way to turn it off, while vanilla Minecraft destroys everything a player carried when they
+  fall out of the world. `false` leaves those drops to the void, so a void death costs the inventory the way the game
+  means it to
+- Added `vanilla-drop.worlds` and separated the vanilla drop mode from the chest generation options. The mode used to be
+  turned off by `filters.excluded-worlds`, `generation.allow-in-end-worlds` and `generation.allow-in-creative`, which only
+  say where a grave may be placed: a death in such a world dropped the items on the ground unprotected, with no reservation
+  and no lock. The mode now carries its own scope, an empty list meaning everywhere. An entry is a world name or a whole
+  dimension (`OVERWORLD`, `NETHER`, `END`), and a world left out falls back to the normal deadchest behavior instead of to
+  bare vanilla, so graves and reserved drops can run side by side on the same server
+- Added `pvp.keep-inventory-worlds`, which restricts `pvp.keep-inventory-on-player-kill` to part of the server. An entry is
+  either a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`), so a renamed world and the extra end worlds of a
+  multi world setup are covered without listing them one by one. An empty list keeps the option applying everywhere, which
+  is the behavior it always had. Listing `OVERWORLD` and `NETHER` leaves the end at full stakes, so the dragon fight and
+  end raids still cost the inventory
+- Fixed `pvp.keep-inventory-on-player-kill` being skipped entirely when the death happened in the end with
+  `generate-in-the-end: false`, in a world listed in `excluded-worlds`, or in creative with
+  `generate-deadchest-in-creative: false`. Those three options say where a grave may be generated, but they were answered
+  before the PvP case, so a player killed there dropped everything while the option promised the opposite. This was most
+  visible next to `vanilla-drop.enabled`, where a PvP kill in such a world spread the items on the ground instead of
+  keeping them. The PvP case is now decided first
+
+## Deadchest 4.30.0 - 2026-07-30
+
+- Added a vanilla drop mode (`vanilla-drop.enabled`) that disables DeadChest generation and keeps vanilla death drops
+- Reserved the vanilla drops to the player who died (`vanilla-drop.owner-only-pickup`), including against mobs and hoppers
+- Added a real time lifetime for the reserved drops (`vanilla-drop.despawn-seconds`, default 5 minutes) that keeps counting while chunks are unloaded
+- Added despawn protection so reserved drops never disappear before their configured lifetime (`vanilla-drop.protect-from-despawn`)
+- Added optional invulnerability and glowing outline for reserved drops (`vanilla-drop.invulnerable`, `vanilla-drop.glow`)
+- Added the `deadchest.dropPass` permission to bypass reserved drops
+- Kept the death coordinates message in vanilla drop mode
+- The respawn compass now works in vanilla drop mode: with no chest to target it points at the place where the reserved drops
+  are waiting, follows the newest death, and is removed once every drop has been picked up or expired
+- Extended the crash duplication protection to the vanilla drop mode. The death is stamped on the player data before the items
+  leave the inventory, the reserved drops carry the same sequence in their persistent tags, and the next login of the owner
+  decides: the drops are confirmed when the player file kept the death, and removed as duplicates when a crash rolled it back
+  while the items came back in the inventory. `integrity.crash-protection`, `integrity.flush-player-data` and
+  `integrity.on-rollback` drive it exactly like they do for chests, and both sides now share one sequence allocator
+- Fixed the vanilla drop mode lock, which relied entirely on DeadChest winning the pickup event. The reservation is now
+  written on the item entity itself (`Item#setOwner`), where the server enforces it without any plugin involved, and it is
+  restored on every maintenance pass, on chunk load and after a restart. The pickup, despawn and merge handlers also moved
+  from `LOW` to `HIGHEST` priority, so a plugin listening later can no longer un-cancel them and quietly open the drops to
+  everybody. A player holding `deadchest.dropPass` or `deadchest.chestPass` still gets through: the native lock is lifted for
+  their pickup and put back afterwards
+- Fixed `vanilla-drop.protect-from-despawn: false` being ignored: the despawn handler cancelled the vanilla 5 minutes timer
+  even when the protection was turned off, so drops outlived the lifetime the option documents
+- Fixed mobs being blocked from reserved drops even with `vanilla-drop.owner-only-pickup: false`, which documents that
+  everybody can take them and which the hopper path already honored
+- Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the
+  recent ones, so a click threw `IncompatibleClassChangeError` on one of the two. The inventories are now read from the event.
+- The Curse of Vanishing is now detected by enchantment key instead of the `Enchantment.VANISHING_CURSE` constant, which
+  moved to a registry
+- The barrel, shulker box and ender chest grave blocks are now resolved by name and fall back to a chest, instead of
+  constants that do not exist on every supported version
+
 ## Deadchest 4.29.0 - 2026-07-25
 
 - Added a respawn compass pointing at the latest DeadChest (`respawn.compass`). It cannot be dropped, cannot be moved into a

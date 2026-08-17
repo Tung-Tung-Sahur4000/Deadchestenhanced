@@ -18,9 +18,16 @@ It is designed for Minecraft Java Edition servers and primarily targets Bukkit, 
 ## Features
 
 - Store a player's inventory in a chest on death instead of dropping items on the ground
+- Or keep vanilla death drops with `vanilla-drop`, reserved to the dead player and held back from the despawn timer
+- Run both modes on one server: `vanilla-drop.worlds` takes a world name or a whole dimension, and a world left out
+  falls back to the normal chest behavior
+- Keep the inventory on PvP deaths (`pvp.keep-inventory-on-player-kill`), scoped the same way, so the end can stay at
+  full stakes while the rest of the map is forgiving
 - Support modern Bukkit-based server software including Paper, Spigot, and Purpur
 - Provide admin tools to inspect, remove, repair, and give back DeadChests
 - Offer configurable behavior, localization, and optional integrations such as WorldGuard
+- Protect against item duplication caused by a server crash, for chests and for reserved drops
+- Point a respawn compass at the latest death, whichever mode is in use
 - Include an API and automated tests for safer maintenance and extensions
 
 ## Compatibility
@@ -82,3 +89,7 @@ documented [here](https://stellionix.github.io/Deadchest/latest/commands-and-per
 ## Contributing
 
 Development and contribution guidelines are available in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+New to the codebase? The [Architecture](https://stellionix.github.io/Deadchest/latest/architecture/) page
+([source](docs/architecture.md)) describes the module split, the two death paths, the crash protection handshake and the
+invariants to preserve when changing things.

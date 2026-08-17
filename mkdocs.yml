@@ -25,5 +25,6 @@ nav:
       - WorldGuard Integration: worldguard.md
       - Troubleshooting: troubleshooting.md
   - Developer:
+      - Architecture: architecture.md
       - API: api.md
       - Contribution: contribution.md

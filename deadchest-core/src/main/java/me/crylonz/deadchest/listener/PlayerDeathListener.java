@@ -6,9 +6,11 @@ import me.crylonz.deadchest.Permission;
 import me.crylonz.deadchest.db.ChestDataRepository;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.placement.GraveLocationResolver;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
-import me.crylonz.deadchest.utils.IgnoreItemRules;
+import me.crylonz.deadchest.utils.RegistryCompat;
 import me.crylonz.deadchest.utils.Utils;
+import me.crylonz.deadchest.utils.WorldScope;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.enchantments.Enchantment;
@@ -47,11 +49,35 @@ public class PlayerDeathListener implements Listener {
 
         // 1) Early exits
         if (keepInventoryAlreadyOn(event)) return;
-        if (disallowedEndGeneration(event)) return;
 
         final Player player = event.getEntity().getPlayer();
-        if (playerOrWorldDisallowsGeneration(player)) return;
+        if (player == null) return;
+
+        // A PvP death decides on its own what happens to the items, so it is
+        // answered before the checks below. Those only say where a grave may be
+        // generated : dying in the end, in an excluded world or in creative turns
+        // the generation off, it does not mean the items have to drop.
         if (pvpKeepInventoryCase(event, player)) return;
+
+        // 1b) Vanilla drop mode : no chest at all, only locked drops on the ground.
+        // It carries its own switch and its own world scope, so the options below,
+        // which only say where a grave may be generated, no longer decide anything
+        // for it. A world left out of 'vanilla-drop.worlds' falls through to the
+        // normal chest behavior, which lets both modes live on the same server.
+        if (LockedDropService.isVanillaDropModeEnabled()) {
+            if (LockedDropService.appliesIn(player.getWorld())) {
+                generateLog("Player [" + player.getName() + "] died with " + ConfigKey.VANILLA_DROP_ENABLED +
+                        " set to true : items are dropped like vanilla. No Deadchest generated");
+                LockedDropService.handlePlayerDeath(event, player);
+                return;
+            }
+
+            generateLog("Player [" + player.getName() + "] died in a world left out of "
+                    + ConfigKey.VANILLA_DROP_WORLDS + " : the normal deadchest behavior applies");
+        }
+
+        if (disallowedEndGeneration(event)) return;
+        if (playerOrWorldDisallowsGeneration(player)) return;
 
         if (player.getInventory().isEmpty()) {
             generateLog("Player [" + player.getName() + "] died without inventory : No Deadchest generated");
@@ -153,7 +179,14 @@ public class PlayerDeathListener implements Listener {
 
     private boolean pvpKeepInventoryCase(PlayerDeathEvent e, Player p) {
         if (config.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)) {
-            if (p.getKiller() != null) {
+            final Player killer = p.getKiller();
+
+            // A player killed by their own hand reports themselves as the killer :
+            // own TNT, own projectile, or a '/kill' run on themselves. Counting that
+            // as PvP would hand everybody a way to keep their inventory on demand,
+            // so only a death caused by somebody else is treated as a player kill.
+            if (killer != null && !killer.getUniqueId().equals(p.getUniqueId())
+                    && pvpKeepInventoryAppliesIn(p.getWorld())) {
                 e.setKeepInventory(true);
                 e.getDrops().clear();
                 generateLog("Player dies in PVP and " + KEEP_INVENTORY_ON_PVP_DEATH + " set to true. No Deadchest generated");
@@ -161,6 +194,17 @@ public class PlayerDeathListener implements Listener {
             }
         }
         return false;
+    }
+
+    /**
+     * Restricts the PvP keep inventory to a part of the server, so a dimension can
+     * be left at full stakes while the rest of the map is forgiving.
+     *
+     * @param world world of the death
+     * @return {@code true} when a player kill keeps the inventory in that world
+     */
+    private boolean pvpKeepInventoryAppliesIn(World world) {
+        return WorldScope.covers(config.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS), world);
     }
 
     private boolean underPerPlayerLimit(Player p) {
@@ -258,7 +302,17 @@ public class PlayerDeathListener implements Listener {
     }
 
     private boolean hasVanishing(ItemStack item) {
-        return item != null && item.getEnchantments().containsKey(Enchantment.VANISHING_CURSE);
+        if (item == null) {
+            return false;
+        }
+
+        for (Enchantment enchantment : item.getEnchantments().keySet()) {
+            if (RegistryCompat.isVanishingCurse(enchantment)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void removeExcludedItems(PlayerInventory inv) {
@@ -373,20 +427,6 @@ public class PlayerDeathListener implements Listener {
                 p.getInventory().removeItem(item);
             }
         }
-    }
-
-    private boolean isIgnoredItem(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-
-        for (Object ignoredEntry : config.getIgnoredEntries()) {
-            if (IgnoreItemRules.matches(ignoredEntry, item)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void maybeSendPosition(Player p, Block b) {

@@ -4,6 +4,7 @@ import me.crylonz.deadchest.ChestData;
 import me.crylonz.deadchest.DeadChestLoader;
 import me.crylonz.deadchest.DeadChestManager;
 import me.crylonz.deadchest.db.ChestDataRepository;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import org.bukkit.entity.Player;
 
@@ -70,11 +71,18 @@ public final class ChestIntegrityService {
     }
 
     /**
-     * @return {@code true} when a chest proven to be a rollback duplicate must
-     * be destroyed instead of being handed to the player a second time
+     * A duplicate proven by the sequence stamp holds items the player already
+     * carries again, so it is always destroyed. Keeping it was an option once,
+     * which left two copies of the same items on the server and turned a crash
+     * into a way to duplicate on purpose.
+     * <p>
+     * The copy destroyed is always the one on the server side, the chest or the
+     * reserved drop. What the player holds is never touched.
+     *
+     * @return {@code true}, always
      */
     public static boolean shouldVoidRollbackDuplicates() {
-        return config == null || !"keep".equalsIgnoreCase(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK));
+        return true;
     }
 
     /**
@@ -195,7 +203,9 @@ public final class ChestIntegrityService {
                 || !shouldFlushPlayerData()
                 || PlayerDataStamp.flush(player);
 
-        return settle(player, playerDataDurable);
+        // The vanilla drop mode stages its drops on the same stamp, so it settles
+        // on the same flush.
+        return settle(player, playerDataDurable) + LockedDropService.settleIntegrity(player);
     }
 
     /**
@@ -243,12 +253,16 @@ public final class ChestIntegrityService {
             return;
         }
 
+        final long persistedSequence = PlayerDataStamp.readSequence(player);
+
+        // Reserved vanilla drops are judged against the same stamp, and they exist
+        // even when this player has no chest at all.
+        LockedDropService.reconcileIntegrity(player, persistedSequence);
+
         final List<ChestData> stamped = stampedChestsOf(player.getUniqueId());
         if (stamped.isEmpty()) {
             return;
         }
-
-        final long persistedSequence = PlayerDataStamp.readSequence(player);
 
         for (ChestData chest : stamped) {
             final boolean playerSidePersisted = chest.getIntegritySequence() <= persistedSequence;
@@ -303,15 +317,6 @@ public final class ChestIntegrityService {
     private static void voidRolledBackDeath(@Nonnull final ChestData chest, final Player player) {
         final String description = "[" + chest.getPlayerName() + "] at " + describe(chest);
 
-        if (!shouldVoidRollbackDuplicates()) {
-            chest.setIntegrityState(ChestIntegrityState.CONFIRMED);
-            ChestDataRepository.saveIntegrityAsync(chest);
-            warn("Deadchest " + description + " was created by a death the server never saved (server crash). "
-                    + "Its content is a duplicate of the items " + chest.getPlayerName() + " still owns, "
-                    + "but '" + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep : chest kept.");
-            return;
-        }
-
         warn("Deadchest " + description + " removed : the death was never saved on the player side (server crash), "
                 + "its content is already back in the inventory of " + chest.getPlayerName() + ".");
 
@@ -348,17 +353,22 @@ public final class ChestIntegrityService {
     /**
      * Allocates the next sequence for a player and stamps it on the player data.
      *
+     * Shared by the deadchests and by the reserved vanilla drops : both stamp the
+     * same player data, so the numbering has to come from one place.
+     *
      * @param player player to stamp
      * @return allocated sequence, or {@code 0} when the player could not be
      * stamped, meaning no proof will be available later
      */
-    private static long allocateSequence(@Nonnull final Player player) {
+    public static long allocateSequence(@Nonnull final Player player) {
         final UUID uuid = player.getUniqueId();
 
         long highest = Math.max(PlayerDataStamp.readSequence(player), sessionSequences.getOrDefault(uuid, 0L));
         for (ChestData chest : stampedChestsOf(uuid)) {
             highest = Math.max(highest, chest.getIntegritySequence());
         }
+        // Reserved vanilla drops are stamped on the same player data.
+        highest = Math.max(highest, LockedDropService.highestStampedSequence(uuid));
 
         final long allocated = highest + 1;
         if (!PlayerDataStamp.writeSequence(player, allocated)) {

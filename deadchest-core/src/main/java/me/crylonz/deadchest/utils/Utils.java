@@ -11,6 +11,7 @@ import org.bukkit.block.Skull;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 
 import java.io.File;
@@ -87,6 +88,27 @@ public class Utils {
         return graveBlocks.contains(material);
     }
 
+    /**
+     * An ignored item keeps its vanilla death behavior : DeadChest never stores it
+     * and never locks it, so Minecraft or another plugin stays in charge of it.
+     *
+     * @param item item to test
+     * @return {@code true} when the item matches one of the 'filters.ignored-items' entries
+     */
+    public static boolean isIgnoredItem(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+
+        for (Object ignoredEntry : config.getIgnoredEntries()) {
+            if (IgnoreItemRules.matches(ignoredEntry, item)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static boolean checkTheEndGeneration(Entity player) {
         return player.getWorld().getEnvironment().equals(World.Environment.THE_END) &&
                 !config.getBoolean(ConfigKey.GENERATE_IN_THE_END);
@@ -114,17 +136,26 @@ public class Utils {
                 skull.update();
                 break;
             case 3:
-                block.setType(Material.BARREL);
+                block.setType(graveBlockOrChest("BARREL"));
                 break;
             case 4:
-                block.setType(Material.SHULKER_BOX);
+                block.setType(graveBlockOrChest("SHULKER_BOX"));
                 break;
             case 5:
-                block.setType(Material.ENDER_CHEST);
+                block.setType(graveBlockOrChest("ENDER_CHEST"));
                 break;
             default:
                 block.setType(Material.CHEST);
         }
+    }
+
+    /**
+     * @param name material name of the configured grave block
+     * @return the material, or a chest when this Minecraft version does not have it
+     */
+    private static Material graveBlockOrChest(String name) {
+        Material material = RegistryCompat.material(name);
+        return material == null ? Material.CHEST : material;
     }
 
     public static ArmorStand[] createHolograms(Block block, String deathDisplayName) {

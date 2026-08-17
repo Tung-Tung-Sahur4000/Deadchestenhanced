@@ -13,6 +13,7 @@ import me.crylonz.deadchest.Localization;
 import me.crylonz.deadchest.db.SQLite;
 import me.crylonz.deadchest.integrity.ChestIntegrityState;
 import me.crylonz.deadchest.integrity.PlayerDataStamp;
+import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.DeadChestConfig;
 import org.bukkit.GameMode;
@@ -38,6 +39,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockedStatic;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
@@ -107,6 +109,8 @@ class PlayerDeathListenerTest {
 
         // Arrays
         when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>());
+        when(cfg.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS)).thenReturn(new ArrayList<>());
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.EXCLUDED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.IGNORED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getIgnoredEntries()).thenReturn(new ArrayList<>());
@@ -131,6 +135,7 @@ class PlayerDeathListenerTest {
             hologramMock.close();
         }
         me.crylonz.deadchest.TestDatabase.stop();
+        LockedDropService.clearTracking();
         MockBukkit.unmock();
     }
 
@@ -195,6 +200,172 @@ class PlayerDeathListenerTest {
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest in PVP keep-inventory case");
         assertTrue(evt.getDrops().isEmpty(), "Drops must be cleared in PVP keep-inventory case");
         assertTrue(evt.getKeepInventory(), "keepInventory should be set to true");
+    }
+
+    @Test
+    void vanillaDropModeStillLetsAPvpDeathKeepTheInventory() {
+        // The two options are meant to be combined : PvP keeps the inventory while
+        // every other death drops on the ground like vanilla.
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(evt.getKeepInventory(), "PvP must keep the inventory even in vanilla drop mode");
+        assertTrue(evt.getDrops().isEmpty(), "A PvP death must not drop anything in vanilla drop mode");
+        assertEquals(0, LockedDropService.getTrackedDropAmount(), "A PvP death must not reserve any drop");
+    }
+
+    @Test
+    void aPvpDeathInAnExcludedWorldStillKeepsTheInventory() {
+        // 'excluded-worlds' turns the grave generation off in that world. It must
+        // not decide what a PvP death does with the items.
+        when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>(List.of(world.getName())));
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(evt.getKeepInventory(), "PvP must keep the inventory in an excluded world too");
+        assertTrue(evt.getDrops().isEmpty(), "A PvP death must not drop anything");
+    }
+
+    /**
+     * Sets the death world up as a given dimension and kills the player in PvP.
+     *
+     * @return the death event after the listener has run
+     */
+    private PlayerDeathEvent pvpDeathIn(World.Environment environment, String worldName, String... scope) {
+        world.setEnvironment(environment);
+        world.setName(worldName);
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS))
+                .thenReturn(new ArrayList<>(Arrays.asList(scope)));
+
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        listener.onPlayerDeathEvent(evt);
+        return evt;
+    }
+
+    @Test
+    void pvpKeepInventoryCanBeLimitedToWholeDimensions() {
+        // 'OVERWORLD' and 'NETHER' listed : a kill in the overworld is forgiving.
+        assertTrue(pvpDeathIn(World.Environment.NORMAL, "world", "OVERWORLD", "NETHER").getKeepInventory(),
+                "The overworld is in the scope");
+    }
+
+    @Test
+    void pvpKeepInventoryIsOffInTheEndWhenTheScopeLeavesItOut() {
+        // The dragon fight and end raids stay at full stakes.
+        assertFalse(pvpDeathIn(World.Environment.THE_END, "world_the_end", "OVERWORLD", "NETHER").getKeepInventory(),
+                "The end is out of the scope, a PvP kill there must drop");
+    }
+
+    @Test
+    void aDimensionEntryCoversARenamedEndWorld() {
+        // A dimension entry is what makes a multi world setup work without listing
+        // every single end world by name.
+        assertFalse(pvpDeathIn(World.Environment.THE_END, "dragons_lair", "OVERWORLD", "NETHER").getKeepInventory(),
+                "A renamed end world is still the end");
+        assertTrue(pvpDeathIn(World.Environment.THE_END, "dragons_lair", "END").getKeepInventory(),
+                "'END' covers every end world whatever its name");
+    }
+
+    @Test
+    void pvpKeepInventoryScopeAlsoAcceptsAPlainWorldName() {
+        assertTrue(pvpDeathIn(World.Environment.NORMAL, "arena", "arena").getKeepInventory(),
+                "A world listed by name is in the scope");
+        assertFalse(pvpDeathIn(World.Environment.NORMAL, "survival", "arena").getKeepInventory(),
+                "A world that is neither named nor in a listed dimension is out");
+    }
+
+    @Test
+    void anEmptyPvpScopeKeepsCoveringEveryWorld() {
+        // Historic behavior : the option applied everywhere before the scope existed.
+        assertTrue(pvpDeathIn(World.Environment.THE_END, "world_the_end").getKeepInventory(),
+                "An empty list must keep covering every world");
+    }
+
+    @Test
+    void vanillaDropModeIsNoLongerDecidedByTheGenerationOptions() {
+        // Those options say where a grave may be placed. They used to turn the
+        // vanilla drop mode off too, which left the items unprotected on the ground.
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>(List.of(world.getName())));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(LockedDropService.getTrackedDropAmount() > 0,
+                "An excluded world must no longer turn the vanilla drop mode off");
+    }
+
+    @Test
+    void aWorldLeftOutOfTheVanillaDropScopeFallsBackToAChest() {
+        // The point of the scope : reserved drops in the end, graves everywhere else.
+        world.setEnvironment(World.Environment.NORMAL);
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>(List.of("END")));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertEquals(0, LockedDropService.getTrackedDropAmount(), "The overworld is out of the vanilla drop scope");
+        assertFalse(DeadChestLoader.getChestDataCache().isEmpty(), "A world out of the scope keeps the normal chest");
+    }
+
+    @Test
+    void aWorldInsideTheVanillaDropScopeReservesTheDrops() {
+        world.setEnvironment(World.Environment.THE_END);
+        world.setName("world_the_end");
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>(List.of("END")));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(LockedDropService.getTrackedDropAmount() > 0, "The end is inside the scope");
+        assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest is generated in vanilla drop mode");
+    }
+
+    @Test
+    void aPlayerKilledByTheirOwnHandIsNotAPvpDeath() {
+        // Own TNT, own projectile or a '/kill' on oneself reports the dead player as
+        // their own killer. Treating that as PvP would let anybody keep their
+        // inventory on demand, so the death has to follow the normal path.
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        player.setKiller(player);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertFalse(evt.getKeepInventory(), "A self kill must not be treated as a player kill");
+        assertFalse(DeadChestLoader.getChestDataCache().isEmpty(), "A self kill still generates a deadchest");
     }
 
     @Test
@@ -469,6 +640,24 @@ class PlayerDeathListenerTest {
         listener.onPlayerDeathEvent(evt);
 
         assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest should be generated with empty inventory");
+    }
+
+    @Test
+    void vanillaDropModeReplacesTheChestByLockedDrops() {
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_OWNER_ONLY_PICKUP)).thenReturn(true);
+        when(cfg.getInt(ConfigKey.VANILLA_DROP_DESPAWN_SECONDS)).thenReturn(300);
+
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.DIAMOND, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest is generated in vanilla drop mode");
+        assertTrue(evt.getDrops().isEmpty(), "Drops are respawned as locked items");
+        assertEquals(1, LockedDropService.getTrackedDropAmount());
+        assertEquals(1, world.getEntitiesByClass(org.bukkit.entity.Item.class).size());
     }
 
     @ParameterizedTest(name = "slot {0} with Vanishing should be cleared")
