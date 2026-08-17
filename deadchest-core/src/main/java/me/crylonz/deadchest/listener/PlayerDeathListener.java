@@ -26,6 +26,7 @@ import org.bukkit.inventory.meta.Damageable;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 import static me.crylonz.deadchest.DeadChestLoader.*;
@@ -175,7 +176,8 @@ public class PlayerDeathListener implements Listener {
             // own TNT, own projectile, or a '/kill' run on themselves. Counting that
             // as PvP would hand everybody a way to keep their inventory on demand,
             // so only a death caused by somebody else is treated as a player kill.
-            if (killer != null && !killer.getUniqueId().equals(p.getUniqueId())) {
+            if (killer != null && !killer.getUniqueId().equals(p.getUniqueId())
+                    && pvpKeepInventoryAppliesIn(p.getWorld())) {
                 e.setKeepInventory(true);
                 e.getDrops().clear();
                 generateLog("Player dies in PVP and " + KEEP_INVENTORY_ON_PVP_DEATH + " set to true. No Deadchest generated");
@@ -183,6 +185,62 @@ public class PlayerDeathListener implements Listener {
             }
         }
         return false;
+    }
+
+    /**
+     * Restricts the PvP keep inventory to a part of the server, so a dimension can
+     * be left at full stakes while the rest of the map is forgiving.
+     *
+     * @param world world of the death
+     * @return {@code true} when a player kill keeps the inventory in that world
+     */
+    private boolean pvpKeepInventoryAppliesIn(World world) {
+        final List<String> scope = config.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS);
+        if (scope.isEmpty() || world == null) {
+            // Empty list keeps the historic behavior : every world is covered.
+            return true;
+        }
+
+        for (String entry : scope) {
+            if (entry == null) {
+                continue;
+            }
+
+            final String candidate = entry.trim();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+
+            if (candidate.equalsIgnoreCase(world.getName()) || matchesDimension(candidate, world.getEnvironment())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reads a whole dimension out of the list, so renamed worlds and the extra end
+     * worlds a multi world setup creates are covered without listing them one by one.
+     *
+     * @param entry      entry of 'pvp.keep-inventory-worlds'
+     * @param environment dimension of the world the player died in
+     * @return {@code true} when the entry names that dimension
+     */
+    private boolean matchesDimension(String entry, World.Environment environment) {
+        switch (entry.toUpperCase(Locale.ROOT)) {
+            case "OVERWORLD":
+            case "NORMAL":
+                return environment == World.Environment.NORMAL;
+            case "NETHER":
+            case "THE_NETHER":
+                return environment == World.Environment.NETHER;
+            case "END":
+            case "THE_END":
+                return environment == World.Environment.THE_END;
+            default:
+                return false;
+        }
     }
 
     private boolean underPerPlayerLimit(Player p) {

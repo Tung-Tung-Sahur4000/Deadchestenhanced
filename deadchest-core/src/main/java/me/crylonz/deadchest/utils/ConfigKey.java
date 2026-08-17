@@ -45,6 +45,7 @@ public enum ConfigKey {
     STORE_XP("xp.store-on-death", "StoreXP"),
     STORE_XP_PERCENTAGE("xp.store-percentage", "StoreXPPercentage"),
     KEEP_INVENTORY_ON_PVP_DEATH("pvp.keep-inventory-on-player-kill", "KeepInventoryOnPvpDeath"),
+    KEEP_INVENTORY_ON_PVP_WORLDS("pvp.keep-inventory-worlds"),
     ITEM_DURABILITY_LOSS_ON_DEATH("durability.loss-on-death-percent", "item-durability-loss-on-death"),
     EFFECT_ANIMATION_ENABLED("visuals.effect-animation.enabled"),
     EFFECT_ANIMATION_STYLE("visuals.effect-animation.style"),

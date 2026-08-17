@@ -39,6 +39,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockedStatic;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
@@ -108,6 +109,7 @@ class PlayerDeathListenerTest {
 
         // Arrays
         when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>());
+        when(cfg.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.EXCLUDED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.IGNORED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getIgnoredEntries()).thenReturn(new ArrayList<>());
@@ -236,6 +238,66 @@ class PlayerDeathListenerTest {
 
         assertTrue(evt.getKeepInventory(), "PvP must keep the inventory in an excluded world too");
         assertTrue(evt.getDrops().isEmpty(), "A PvP death must not drop anything");
+    }
+
+    /**
+     * Sets the death world up as a given dimension and kills the player in PvP.
+     *
+     * @return the death event after the listener has run
+     */
+    private PlayerDeathEvent pvpDeathIn(World.Environment environment, String worldName, String... scope) {
+        world.setEnvironment(environment);
+        world.setName(worldName);
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS))
+                .thenReturn(new ArrayList<>(Arrays.asList(scope)));
+
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        listener.onPlayerDeathEvent(evt);
+        return evt;
+    }
+
+    @Test
+    void pvpKeepInventoryCanBeLimitedToWholeDimensions() {
+        // 'OVERWORLD' and 'NETHER' listed : a kill in the overworld is forgiving.
+        assertTrue(pvpDeathIn(World.Environment.NORMAL, "world", "OVERWORLD", "NETHER").getKeepInventory(),
+                "The overworld is in the scope");
+    }
+
+    @Test
+    void pvpKeepInventoryIsOffInTheEndWhenTheScopeLeavesItOut() {
+        // The dragon fight and end raids stay at full stakes.
+        assertFalse(pvpDeathIn(World.Environment.THE_END, "world_the_end", "OVERWORLD", "NETHER").getKeepInventory(),
+                "The end is out of the scope, a PvP kill there must drop");
+    }
+
+    @Test
+    void aDimensionEntryCoversARenamedEndWorld() {
+        // A dimension entry is what makes a multi world setup work without listing
+        // every single end world by name.
+        assertFalse(pvpDeathIn(World.Environment.THE_END, "dragons_lair", "OVERWORLD", "NETHER").getKeepInventory(),
+                "A renamed end world is still the end");
+        assertTrue(pvpDeathIn(World.Environment.THE_END, "dragons_lair", "END").getKeepInventory(),
+                "'END' covers every end world whatever its name");
+    }
+
+    @Test
+    void pvpKeepInventoryScopeAlsoAcceptsAPlainWorldName() {
+        assertTrue(pvpDeathIn(World.Environment.NORMAL, "arena", "arena").getKeepInventory(),
+                "A world listed by name is in the scope");
+        assertFalse(pvpDeathIn(World.Environment.NORMAL, "survival", "arena").getKeepInventory(),
+                "A world that is neither named nor in a listed dimension is out");
+    }
+
+    @Test
+    void anEmptyPvpScopeKeepsCoveringEveryWorld() {
+        // Historic behavior : the option applied everywhere before the scope existed.
+        assertTrue(pvpDeathIn(World.Environment.THE_END, "world_the_end").getKeepInventory(),
+                "An empty list must keep covering every world");
     }
 
     @Test

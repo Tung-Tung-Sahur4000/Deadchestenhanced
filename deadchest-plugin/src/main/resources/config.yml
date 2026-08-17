@@ -300,6 +300,18 @@ pvp:
   # vanilla 'keepInventory' gamerule left off.
   keep-inventory-on-player-kill: false
 
+  # Where 'keep-inventory-on-player-kill' applies.
+  # Empty list = everywhere (default).
+  # An entry is either a world name or a whole dimension:
+  #   OVERWORLD (or NORMAL), NETHER (or THE_NETHER), END (or THE_END)
+  # A dimension covers every world of that kind, so renamed worlds and the extra
+  # end worlds of a multi world setup are included without listing them.
+  # Leaving the end out keeps the dragon fight and end raids at full stakes:
+  #   keep-inventory-worlds:
+  #     - OVERWORLD
+  #     - NETHER
+  keep-inventory-worlds: []
+
 integrations:
   worldguard:
     # Enable WorldGuard region checks for generation allow/deny.

@@ -31,6 +31,11 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Added `pvp.keep-inventory-worlds`, which restricts `pvp.keep-inventory-on-player-kill` to part of the server. An entry is
+  either a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`), so a renamed world and the extra end worlds of a
+  multi world setup are covered without listing them one by one. An empty list keeps the option applying everywhere, which
+  is the behavior it always had. Listing `OVERWORLD` and `NETHER` leaves the end at full stakes, so the dragon fight and
+  end raids still cost the inventory
 - Fixed `pvp.keep-inventory-on-player-kill` being skipped entirely when the death happened in the end with
   `generate-in-the-end: false`, in a world listed in `excluded-worlds`, or in creative with
   `generate-deadchest-in-creative: false`. Those three options say where a grave may be generated, but they were answered
