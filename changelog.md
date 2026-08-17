@@ -31,6 +31,11 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Fixed the retired `integrity.on-rollback` being written back into `config.yml` by the configuration migration. Every
+  registered key is restored into the regenerated file, so a server upgrading to this version, which migrates because the
+  new keys are missing, got the dead option back in its config with the value it used to have. The key is no longer
+  registered and is read straight from the file for the startup warning, which now runs before the migration so the
+  warning is still shown on the upgrade that removes it
 - A deadchest or a reserved drop proven to be a crash duplicate is now always destroyed, and `integrity.on-rollback` is
   retired. Its `keep` value left the duplicate on the server next to the copy the player had just got back, so a crash, or
   a crash caused on purpose, was a way to end up with two sets of the same items. A config still carrying the option logs a

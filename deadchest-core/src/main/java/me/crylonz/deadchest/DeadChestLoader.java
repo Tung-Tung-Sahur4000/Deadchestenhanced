@@ -88,6 +88,10 @@ public class DeadChestLoader {
         }, plugin);
 
         registerConfig();
+        // Before initializeConfig : the migration rewrites config.yml from the
+        // current template, which drops the retired key, so reading it afterwards
+        // would never see what the server actually had.
+        warnAboutRetiredRollbackKeep();
         initializeConfig();
 
         if (config.getBoolean(ConfigKey.AUTO_CLEANUP_ON_START)) {
@@ -278,8 +282,6 @@ public class DeadChestLoader {
         config.register(ConfigKey.RESPAWN_COMPASS_UPDATE_SECONDS.toString(), 5);
         config.register(ConfigKey.INTEGRITY_PROTECTION_ENABLED.toString(), true);
         config.register(ConfigKey.INTEGRITY_FLUSH_PLAYER_DATA.toString(), true);
-        config.register(ConfigKey.INTEGRITY_ON_ROLLBACK.toString(), "void");
-        warnAboutRetiredRollbackKeep();
     }
 
     /**
@@ -287,13 +289,17 @@ public class DeadChestLoader {
      * copy the player already held, which made a crash a way to duplicate items on
      * purpose. A proven duplicate is always destroyed now, so a config still
      * asking to keep it says so once instead of changing behavior in silence.
+     * <p>
+     * Read straight from the file rather than through a registered key: the
+     * migration writes every registered key back into config.yml, which would put
+     * this one back in the file of every server that upgrades.
      */
     private void warnAboutRetiredRollbackKeep() {
-        if (config == null || log == null) {
+        if (plugin == null || log == null) {
             return;
         }
 
-        if ("keep".equalsIgnoreCase(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK))) {
+        if ("keep".equalsIgnoreCase(plugin.getConfig().getString(ConfigKey.INTEGRITY_ON_ROLLBACK.toString()))) {
             log.warning("[DeadChest] '" + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep, which is no longer "
                     + "honored : a chest or a reserved drop proven to be a crash duplicate is always destroyed, "
                     + "because keeping it left two copies of the same items on the server. The option can be "
