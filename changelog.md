@@ -20,8 +20,17 @@
   from `LOW` to `HIGHEST` priority, so a plugin listening later can no longer un-cancel them and quietly open the drops to
   everybody. A player holding `deadchest.dropPass` or `deadchest.chestPass` still gets through: the native lock is lifted for
   their pickup and put back afterwards
+- Fixed reserved drops disappearing before their configured lifetime on any server that lowers `item-despawn-rate` in
+  spigot.yml. The plugin used to reset the age of each drop once per second and cancel the despawn event, which races a
+  timer it does not control: a server at `3000` took the drops away after 2 minutes 30 while `vanilla-drop.despawn-seconds`
+  announced 5 minutes. Reserved drops are now marked as living forever on the entity, so `despawn-seconds` is the only
+  thing that removes them. Shutdown hands them back to the vanilla timer so removing DeadChest cannot leave items that
+  never disappear
 - Fixed `vanilla-drop.protect-from-despawn: false` being ignored: the despawn handler cancelled the vanilla 5 minutes timer
   even when the protection was turned off, so drops outlived the lifetime the option documents
+- Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
+  TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
+  keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
 - Fixed mobs being blocked from reserved drops even with `vanilla-drop.owner-only-pickup: false`, which documents that
   everybody can take them and which the hopper path already honored
 - Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the

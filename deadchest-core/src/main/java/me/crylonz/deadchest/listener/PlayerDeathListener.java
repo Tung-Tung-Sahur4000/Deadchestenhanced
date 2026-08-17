@@ -162,7 +162,13 @@ public class PlayerDeathListener implements Listener {
 
     private boolean pvpKeepInventoryCase(PlayerDeathEvent e, Player p) {
         if (config.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)) {
-            if (p.getKiller() != null) {
+            final Player killer = p.getKiller();
+
+            // A player killed by their own hand reports themselves as the killer :
+            // own TNT, own projectile, or a '/kill' run on themselves. Counting that
+            // as PvP would hand everybody a way to keep their inventory on demand,
+            // so only a death caused by somebody else is treated as a player kill.
+            if (killer != null && !killer.getUniqueId().equals(p.getUniqueId())) {
                 e.setKeepInventory(true);
                 e.getDrops().clear();
                 generateLog("Player dies in PVP and " + KEEP_INVENTORY_ON_PVP_DEATH + " set to true. No Deadchest generated");

@@ -200,6 +200,23 @@ class PlayerDeathListenerTest {
     }
 
     @Test
+    void aPlayerKilledByTheirOwnHandIsNotAPvpDeath() {
+        // Own TNT, own projectile or a '/kill' on oneself reports the dead player as
+        // their own killer. Treating that as PvP would let anybody keep their
+        // inventory on demand, so the death has to follow the normal path.
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        player.setKiller(player);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertFalse(evt.getKeepInventory(), "A self kill must not be treated as a player kill");
+        assertFalse(DeadChestLoader.getChestDataCache().isEmpty(), "A self kill still generates a deadchest");
+    }
+
+    @Test
     void railsDisallowedStopsGeneration() {
         // Disallow on any rail
         when(cfg.getBoolean(ConfigKey.GENERATE_ON_RAILS)).thenReturn(false);

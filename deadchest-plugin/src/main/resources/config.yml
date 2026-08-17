@@ -287,8 +287,14 @@ xp:
 
 pvp:
   # Behavior for PvP deaths (killed by another player):
-  # true  = keep inventory, no DeadChest generated
+  # true  = keep inventory, no DeadChest generated and nothing dropped
   # false = normal plugin behavior
+  # A player killed by their own hand (own TNT, own projectile, '/kill' on
+  # themselves) is not a PvP death and follows the normal behavior below.
+  # Combine with 'vanilla-drop.enabled: true' to get PvP deaths keeping the
+  # inventory while every other death drops on the ground like vanilla.
+  # Note: this keeps the items only. Experience still drops, exactly like the
+  # vanilla 'keepInventory' gamerule left off.
   keep-inventory-on-player-kill: false
 
 integrations:

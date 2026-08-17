@@ -25,7 +25,10 @@ import java.util.logging.Logger;
 
 import static me.crylonz.deadchest.utils.ConfigKey.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -191,14 +194,34 @@ class LockedDropServiceTest {
     }
 
     @Test
-    void despawnRefreshResetsTheVanillaAgeOfTheItem() {
-        // MockBukkit item entities do not implement the age API, so the reset is
-        // checked on a plain Bukkit item.
+    void despawnProtectionSwitchesTheVanillaTimerOffOnTheEntity() {
+        // Resetting the age on every pass would race a server whose
+        // 'item-despawn-rate' is shorter than the configured lifetime.
         Item item = mock(Item.class);
 
         LockedDropService.refreshDespawnTimer(item);
 
+        verify(item).setUnlimitedLifetime(true);
+        verify(item, never()).setTicksLived(anyInt());
+    }
+
+    @Test
+    void despawnRefreshFallsBackToTheAgeResetWithoutTheLifetimeApi() {
+        Item item = mock(Item.class);
+        doThrow(new NoSuchMethodError("setUnlimitedLifetime")).when(item).setUnlimitedLifetime(true);
+
+        LockedDropService.refreshDespawnTimer(item);
+
         verify(item).setTicksLived(1);
+    }
+
+    @Test
+    void turningTheProtectionOffHandsTheDropBackToTheVanillaTimer() {
+        Item item = mock(Item.class);
+
+        LockedDropService.restoreVanillaDespawn(item);
+
+        verify(item).setUnlimitedLifetime(false);
     }
 
     @Test
