@@ -106,6 +106,9 @@ Set them for the chest mode; a world that falls back to a grave through `vanilla
 Notes:
 
 - The countdown uses real time, so it keeps running while the chunk is unloaded or while nobody is nearby: a drop is removed `despawn-seconds` after the death, wherever the player is.
+- DeadChest warns at startup, and tells an operator in chat when they join, if `item-despawn-rate` is shorter than
+  `despawn-seconds` for any world in scope. Raising the spigot.yml rate above the configured lifetime is the fix: the
+  plugin holds the drops meanwhile, but the two settings disagreeing is what causes drops to vanish early.
 - The vanilla despawn timer this protects against is `item-despawn-rate` in `spigot.yml`, not a fixed 5 minutes. It is
   `6000` ticks out of the box but plenty of servers lower it, and a server sitting at `3000` removes untouched items after
   2 minutes 30. With `protect-from-despawn: true` the reserved drops are taken off that timer entirely, so

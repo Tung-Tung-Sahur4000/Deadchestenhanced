@@ -115,18 +115,12 @@ class LockedDropListenerTest {
     private Item withEntityApi(Item item) {
         Item entity = spy(item);
         AtomicReference<UUID> nativeOwner = new AtomicReference<>();
-        AtomicBoolean unlimitedLifetime = new AtomicBoolean();
 
         doAnswer(invocation -> {
             nativeOwner.set(invocation.getArgument(0));
             return null;
         }).when(entity).setOwner(any());
         doAnswer(invocation -> nativeOwner.get()).when(entity).getOwner();
-        doAnswer(invocation -> {
-            unlimitedLifetime.set(invocation.getArgument(0));
-            return null;
-        }).when(entity).setUnlimitedLifetime(anyBoolean());
-        doAnswer(invocation -> unlimitedLifetime.get()).when(entity).isUnlimitedLifetime();
         doNothing().when(entity).setCanMobPickup(anyBoolean());
 
         return entity;
@@ -272,12 +266,6 @@ class LockedDropListenerTest {
         assertFalse(event.isCancelled());
     }
 
-    @Test
-    void aReservedDropIsTakenOffTheVanillaDespawnTimerWhenItIsLocked() {
-        // The timer is 'item-despawn-rate' in spigot.yml, which a server can set
-        // below the configured lifetime.
-        assertTrue(lockedDrop(owner.getUniqueId(), System.currentTimeMillis() + 300_000L).isUnlimitedLifetime());
-    }
 
     @Test
     void vanillaDespawnIsCancelledWhileTheDropIsStillReserved() {

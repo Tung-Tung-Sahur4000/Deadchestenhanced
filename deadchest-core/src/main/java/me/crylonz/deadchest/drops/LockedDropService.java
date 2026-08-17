@@ -725,8 +725,6 @@ public final class LockedDropService {
 
         if (isDespawnProtectionEnabled()) {
             refreshDespawnTimer(item);
-        } else {
-            restoreVanillaDespawn(item);
         }
     }
 
@@ -772,70 +770,23 @@ public final class LockedDropService {
     }
 
     /**
-     * Switches the vanilla despawn timer off on the entity, so
-     * {@code vanilla-drop.despawn-seconds} is the only thing that can remove a
-     * reserved drop.
+     * Holds the vanilla despawn timer back by resetting the age of the drop on
+     * every maintenance pass. Paired with the cancelled {@code ItemDespawnEvent}
+     * in {@code LockedDropListener}, which is what covers a drop the pass has not
+     * reached yet.
      * <p>
-     * The timer being cancelled here is the {@code item-despawn-rate} of
-     * spigot.yml. It is 6000 ticks out of the box but plenty of servers lower it,
-     * and a server sitting at 3000 would otherwise take the drops away after 2
-     * minutes 30 whatever lifetime is configured. Marking the entity as living
-     * forever settles it once, instead of racing the timer with a reset on every
-     * maintenance pass and a cancelled {@code ItemDespawnEvent}.
+     * The timer held back here is the {@code item-despawn-rate} of spigot.yml. A
+     * server whose rate is shorter than {@code vanilla-drop.despawn-seconds} is
+     * reported by {@link DespawnRateAdvisor} rather than worked around any harder
+     * than this: the drops stay ordinary item entities the server still owns.
      *
      * @param item reserved drop
      */
     static void refreshDespawnTimer(Item item) {
         try {
-            item.setUnlimitedLifetime(true);
-            return;
-        } catch (Throwable ignored) {
-            // Server without that API : the age reset below still holds the timer
-            // back, as long as the maintenance pass keeps reaching the drop.
-        }
-
-        try {
             item.setTicksLived(1);
         } catch (Throwable ignored) {
             // Not supported by this platform : the configured lifetime still applies.
-        }
-    }
-
-    /**
-     * Hands the drop back to the vanilla despawn timer.
-     *
-     * @param item reserved drop
-     */
-    static void restoreVanillaDespawn(Item item) {
-        try {
-            item.setUnlimitedLifetime(false);
-        } catch (Throwable ignored) {
-            // Nothing was switched off in the first place.
-        }
-    }
-
-    /**
-     * Gives every reserved drop its vanilla despawn timer back.
-     * <p>
-     * Called on shutdown : a drop marked as living forever would otherwise stay on
-     * the ground for good if DeadChest is removed before the server comes back,
-     * since nothing would be left to expire it. Startup marks them again.
-     */
-    public static void releaseDespawnProtection() {
-        for (LockedDrop drop : new ArrayList<>(trackedDrops.values())) {
-            if (drop == null) {
-                continue;
-            }
-
-            try {
-                Entity entity = Bukkit.getEntity(drop.getItemId());
-                if (entity instanceof Item) {
-                    restoreVanillaDespawn((Item) entity);
-                }
-            } catch (Throwable ignored) {
-                // Shutdown is best effort : a drop left marked is found back and
-                // maintained again on the next startup.
-            }
         }
     }
 
@@ -926,8 +877,6 @@ public final class LockedDropService {
 
         if (isDespawnProtectionEnabled()) {
             refreshDespawnTimer(item);
-        } else {
-            restoreVanillaDespawn(item);
         }
     }
 

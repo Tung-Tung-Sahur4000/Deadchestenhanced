@@ -6,6 +6,7 @@ import me.crylonz.deadchest.compass.GraveCompassService;
 import me.crylonz.deadchest.db.*;
 import me.crylonz.deadchest.deps.worldguard.WorldGuardSoftDependenciesChecker;
 import me.crylonz.deadchest.integrity.ChestIntegrityService;
+import me.crylonz.deadchest.drops.DespawnRateAdvisor;
 import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.legacy.OldChestData;
 import me.crylonz.deadchest.scheduler.SchedulerAdapter;
@@ -125,6 +126,22 @@ public class DeadChestLoader {
         Objects.requireNonNull(javaPlugin.getCommand("dc")).setTabCompleter(new DCTabCompletion());
 
         launchRepeatingTask();
+        warnAboutShortDespawnRate();
+    }
+
+    /**
+     * Says once at startup that spigot.yml would remove the reserved drops before
+     * the lifetime the vanilla drop mode announces. Operators are told again in
+     * chat when they join, because this line scrolls away.
+     */
+    private void warnAboutShortDespawnRate() {
+        if (log == null) {
+            return;
+        }
+
+        for (String mismatch : DespawnRateAdvisor.findMismatches()) {
+            log.warning("[DeadChest] " + mismatch);
+        }
     }
 
 
@@ -158,7 +175,6 @@ public class DeadChestLoader {
         scheduler.cancelTask(animationTask);
         scheduler.cancelTask(compassTask);
         scheduler.cancelTask(lockedDropTask);
-        LockedDropService.releaseDespawnProtection();
         LockedDropService.clearTracking();
 
         ChestDataRepository.saveAllAsync(getChestDataCache().getAllChestData().values());

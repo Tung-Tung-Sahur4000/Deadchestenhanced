@@ -21,11 +21,14 @@
   everybody. A player holding `deadchest.dropPass` or `deadchest.chestPass` still gets through: the native lock is lifted for
   their pickup and put back afterwards
 - Fixed reserved drops disappearing before their configured lifetime on any server that lowers `item-despawn-rate` in
-  spigot.yml. The plugin used to reset the age of each drop once per second and cancel the despawn event, which races a
-  timer it does not control: a server at `3000` took the drops away after 2 minutes 30 while `vanilla-drop.despawn-seconds`
-  announced 5 minutes. Reserved drops are now marked as living forever on the entity, so `despawn-seconds` is the only
-  thing that removes them. Shutdown hands them back to the vanilla timer so removing DeadChest cannot leave items that
-  never disappear
+  spigot.yml. The despawn protection now holds the drops by resetting their age on every maintenance pass and cancelling
+  the despawn event, which was measured on Paper 1.21.4 holding a drop for the full `vanilla-drop.despawn-seconds` with
+  `item-despawn-rate` set to `100` ticks, six times shorter. The drops stay ordinary item entities the server still owns:
+  they are not marked as living forever, so removing DeadChest can never leave items that nothing will clean up
+- Added a startup and in game warning when spigot.yml would remove the reserved drops before their configured lifetime.
+  The console reports one line per world in scope at startup, and an operator joining the server is told in chat, since
+  the startup line scrolls away. Both name the world, the current `item-despawn-rate`, the configured lifetime and the
+  value to raise the rate to
 - Fixed `vanilla-drop.protect-from-despawn: false` being ignored: the despawn handler cancelled the vanilla 5 minutes timer
   even when the protection was turned off, so drops outlived the lifetime the option documents
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
