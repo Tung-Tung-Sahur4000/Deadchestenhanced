@@ -25,6 +25,7 @@ public enum ConfigKey {
     LOOT_PUBLIC_ACCESS_KILLER("chest.loot.public-access.killer"),
     LOOT_PUBLIC_ACCESS_OTHER_PLAYERS("chest.loot.public-access.other-players"),
     VANILLA_DROP_ENABLED("vanilla-drop.enabled"),
+    VANILLA_DROP_WORLDS("vanilla-drop.worlds"),
     VANILLA_DROP_OWNER_ONLY_PICKUP("vanilla-drop.owner-only-pickup"),
     VANILLA_DROP_DESPAWN_SECONDS("vanilla-drop.despawn-seconds"),
     VANILLA_DROP_PROTECT_FROM_DESPAWN("vanilla-drop.protect-from-despawn"),

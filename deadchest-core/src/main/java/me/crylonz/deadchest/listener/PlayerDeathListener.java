@@ -10,6 +10,7 @@ import me.crylonz.deadchest.drops.LockedDropService;
 import me.crylonz.deadchest.utils.ConfigKey;
 import me.crylonz.deadchest.utils.RegistryCompat;
 import me.crylonz.deadchest.utils.Utils;
+import me.crylonz.deadchest.utils.WorldScope;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.enchantments.Enchantment;
@@ -26,7 +27,6 @@ import org.bukkit.inventory.meta.Damageable;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 import static me.crylonz.deadchest.DeadChestLoader.*;
@@ -59,16 +59,25 @@ public class PlayerDeathListener implements Listener {
         // the generation off, it does not mean the items have to drop.
         if (pvpKeepInventoryCase(event, player)) return;
 
+        // 1b) Vanilla drop mode : no chest at all, only locked drops on the ground.
+        // It carries its own switch and its own world scope, so the options below,
+        // which only say where a grave may be generated, no longer decide anything
+        // for it. A world left out of 'vanilla-drop.worlds' falls through to the
+        // normal chest behavior, which lets both modes live on the same server.
+        if (LockedDropService.isVanillaDropModeEnabled()) {
+            if (LockedDropService.appliesIn(player.getWorld())) {
+                generateLog("Player [" + player.getName() + "] died with " + ConfigKey.VANILLA_DROP_ENABLED +
+                        " set to true : items are dropped like vanilla. No Deadchest generated");
+                LockedDropService.handlePlayerDeath(event, player);
+                return;
+            }
+
+            generateLog("Player [" + player.getName() + "] died in a world left out of "
+                    + ConfigKey.VANILLA_DROP_WORLDS + " : the normal deadchest behavior applies");
+        }
+
         if (disallowedEndGeneration(event)) return;
         if (playerOrWorldDisallowsGeneration(player)) return;
-
-        // 1b) Vanilla drop mode : no chest at all, only locked drops on the ground
-        if (LockedDropService.isVanillaDropModeEnabled()) {
-            generateLog("Player [" + player.getName() + "] died with " + ConfigKey.VANILLA_DROP_ENABLED +
-                    " set to true : items are dropped like vanilla. No Deadchest generated");
-            LockedDropService.handlePlayerDeath(event, player);
-            return;
-        }
 
         if (player.getInventory().isEmpty()) {
             generateLog("Player [" + player.getName() + "] died without inventory : No Deadchest generated");
@@ -195,52 +204,7 @@ public class PlayerDeathListener implements Listener {
      * @return {@code true} when a player kill keeps the inventory in that world
      */
     private boolean pvpKeepInventoryAppliesIn(World world) {
-        final List<String> scope = config.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS);
-        if (scope.isEmpty() || world == null) {
-            // Empty list keeps the historic behavior : every world is covered.
-            return true;
-        }
-
-        for (String entry : scope) {
-            if (entry == null) {
-                continue;
-            }
-
-            final String candidate = entry.trim();
-            if (candidate.isEmpty()) {
-                continue;
-            }
-
-            if (candidate.equalsIgnoreCase(world.getName()) || matchesDimension(candidate, world.getEnvironment())) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Reads a whole dimension out of the list, so renamed worlds and the extra end
-     * worlds a multi world setup creates are covered without listing them one by one.
-     *
-     * @param entry      entry of 'pvp.keep-inventory-worlds'
-     * @param environment dimension of the world the player died in
-     * @return {@code true} when the entry names that dimension
-     */
-    private boolean matchesDimension(String entry, World.Environment environment) {
-        switch (entry.toUpperCase(Locale.ROOT)) {
-            case "OVERWORLD":
-            case "NORMAL":
-                return environment == World.Environment.NORMAL;
-            case "NETHER":
-            case "THE_NETHER":
-                return environment == World.Environment.NETHER;
-            case "END":
-            case "THE_END":
-                return environment == World.Environment.THE_END;
-            default:
-                return false;
-        }
+        return WorldScope.covers(config.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS), world);
     }
 
     private boolean underPerPlayerLimit(Player p) {

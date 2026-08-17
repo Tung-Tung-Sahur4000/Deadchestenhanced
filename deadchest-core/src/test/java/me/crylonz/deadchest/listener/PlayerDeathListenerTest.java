@@ -110,6 +110,7 @@ class PlayerDeathListenerTest {
         // Arrays
         when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS)).thenReturn(new ArrayList<>());
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.EXCLUDED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getArray(ConfigKey.IGNORED_ITEMS)).thenReturn(new ArrayList<>());
         when(cfg.getIgnoredEntries()).thenReturn(new ArrayList<>());
@@ -298,6 +299,56 @@ class PlayerDeathListenerTest {
         // Historic behavior : the option applied everywhere before the scope existed.
         assertTrue(pvpDeathIn(World.Environment.THE_END, "world_the_end").getKeepInventory(),
                 "An empty list must keep covering every world");
+    }
+
+    @Test
+    void vanillaDropModeIsNoLongerDecidedByTheGenerationOptions() {
+        // Those options say where a grave may be placed. They used to turn the
+        // vanilla drop mode off too, which left the items unprotected on the ground.
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>(List.of(world.getName())));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(LockedDropService.getTrackedDropAmount() > 0,
+                "An excluded world must no longer turn the vanilla drop mode off");
+    }
+
+    @Test
+    void aWorldLeftOutOfTheVanillaDropScopeFallsBackToAChest() {
+        // The point of the scope : reserved drops in the end, graves everywhere else.
+        world.setEnvironment(World.Environment.NORMAL);
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>(List.of("END")));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertEquals(0, LockedDropService.getTrackedDropAmount(), "The overworld is out of the vanilla drop scope");
+        assertFalse(DeadChestLoader.getChestDataCache().isEmpty(), "A world out of the scope keeps the normal chest");
+    }
+
+    @Test
+    void aWorldInsideTheVanillaDropScopeReservesTheDrops() {
+        world.setEnvironment(World.Environment.THE_END);
+        world.setName("world_the_end");
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getArray(ConfigKey.VANILLA_DROP_WORLDS)).thenReturn(new ArrayList<>(List.of("END")));
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(LockedDropService.getTrackedDropAmount() > 0, "The end is inside the scope");
+        assertTrue(DeadChestLoader.getChestDataCache().isEmpty(), "No chest is generated in vanilla drop mode");
     }
 
     @Test

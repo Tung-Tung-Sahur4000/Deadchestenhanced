@@ -6,6 +6,7 @@ import me.crylonz.deadchest.integrity.ChestIntegrityService;
 import me.crylonz.deadchest.integrity.PlayerDataStamp;
 import me.crylonz.deadchest.placement.GraveBlocks;
 import me.crylonz.deadchest.utils.ConfigKey;
+import me.crylonz.deadchest.utils.WorldScope;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -70,6 +71,21 @@ public final class LockedDropService {
      */
     public static boolean isVanillaDropModeEnabled() {
         return isEnabled(ConfigKey.VANILLA_DROP_ENABLED);
+    }
+
+    /**
+     * Worlds the vanilla drop mode covers, independent of the options that say
+     * where a grave may be generated. A world left out falls back to the normal
+     * deadchest behavior, so both modes can run on the same server.
+     *
+     * @param world world of the death
+     * @return {@code true} when the vanilla drop mode applies in that world
+     */
+    public static boolean appliesIn(World world) {
+        if (config == null) {
+            return true;
+        }
+        return WorldScope.covers(config.getArray(ConfigKey.VANILLA_DROP_WORLDS), world);
     }
 
     public static boolean isOwnerOnlyPickup() {

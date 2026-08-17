@@ -109,6 +109,21 @@ vanilla-drop:
   # and the vanilla recovery compass keeps pointing at the death location.
   enabled: false
 
+  # Where the vanilla drop mode applies.
+  # Empty list = everywhere 'enabled' is true (default).
+  # An entry is either a world name or a whole dimension:
+  #   OVERWORLD (or NORMAL), NETHER (or THE_NETHER), END (or THE_END)
+  # A world left out of this list falls back to the normal DeadChest behavior,
+  # so both modes can run on the same server. For example, graves everywhere
+  # except the end, where the items stay on the ground:
+  #   worlds:
+  #     - END
+  # This list is the only thing that scopes the mode. The generation options
+  # ('filters.excluded-worlds', 'generation.allow-in-end-worlds',
+  # 'generation.allow-in-creative') only say where a grave may be placed and
+  # have no effect here.
+  worlds: []
+
   # Restrict the drops to the player who died.
   # true  = only the owner can pick them up, mobs and hoppers are blocked too
   # false = anyone can pick them up (drops are only protected from despawn)

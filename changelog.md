@@ -31,6 +31,12 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Added `vanilla-drop.worlds` and separated the vanilla drop mode from the chest generation options. The mode used to be
+  turned off by `filters.excluded-worlds`, `generation.allow-in-end-worlds` and `generation.allow-in-creative`, which only
+  say where a grave may be placed: a death in such a world dropped the items on the ground unprotected, with no reservation
+  and no lock. The mode now carries its own scope, an empty list meaning everywhere. An entry is a world name or a whole
+  dimension (`OVERWORLD`, `NETHER`, `END`), and a world left out falls back to the normal deadchest behavior instead of to
+  bare vanilla, so graves and reserved drops can run side by side on the same server
 - Added `pvp.keep-inventory-worlds`, which restricts `pvp.keep-inventory-on-player-kill` to part of the server. An entry is
   either a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`), so a renamed world and the extra end worlds of a
   multi world setup are covered without listing them one by one. An empty list keeps the option applying everywhere, which
