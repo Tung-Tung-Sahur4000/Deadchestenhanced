@@ -31,6 +31,12 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Fixed `pvp.keep-inventory-on-player-kill` being skipped entirely when the death happened in the end with
+  `generate-in-the-end: false`, in a world listed in `excluded-worlds`, or in creative with
+  `generate-deadchest-in-creative: false`. Those three options say where a grave may be generated, but they were answered
+  before the PvP case, so a player killed there dropped everything while the option promised the opposite. This was most
+  visible next to `vanilla-drop.enabled`, where a PvP kill in such a world spread the items on the ground instead of
+  keeping them. The PvP case is now decided first
 - Fixed mobs being blocked from reserved drops even with `vanilla-drop.owner-only-pickup: false`, which documents that
   everybody can take them and which the hopper path already honored
 - Fixed the ignore-list GUI reading `InventoryView`, which is a class on the supported old servers and an interface on the

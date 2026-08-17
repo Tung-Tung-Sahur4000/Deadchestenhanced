@@ -200,6 +200,45 @@ class PlayerDeathListenerTest {
     }
 
     @Test
+    void vanillaDropModeStillLetsAPvpDeathKeepTheInventory() {
+        // The two options are meant to be combined : PvP keeps the inventory while
+        // every other death drops on the ground like vanilla.
+        when(cfg.getBoolean(ConfigKey.VANILLA_DROP_ENABLED)).thenReturn(true);
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(evt.getKeepInventory(), "PvP must keep the inventory even in vanilla drop mode");
+        assertTrue(evt.getDrops().isEmpty(), "A PvP death must not drop anything in vanilla drop mode");
+        assertEquals(0, LockedDropService.getTrackedDropAmount(), "A PvP death must not reserve any drop");
+    }
+
+    @Test
+    void aPvpDeathInAnExcludedWorldStillKeepsTheInventory() {
+        // 'excluded-worlds' turns the grave generation off in that world. It must
+        // not decide what a PvP death does with the items.
+        when(cfg.getArray(ConfigKey.EXCLUDED_WORLDS)).thenReturn(new ArrayList<>(List.of(world.getName())));
+        when(cfg.getBoolean(KEEP_INVENTORY_ON_PVP_DEATH)).thenReturn(true);
+        PlayerMock killer = server.addPlayer("Alex");
+        player.setKiller(killer);
+        player.getInventory().setItem(0, new ItemStack(Material.DIAMOND, 1));
+
+        PlayerDeathEvent evt = deathEvent();
+        evt.getDrops().add(new ItemStack(Material.IRON_INGOT, 1));
+
+        listener.onPlayerDeathEvent(evt);
+
+        assertTrue(evt.getKeepInventory(), "PvP must keep the inventory in an excluded world too");
+        assertTrue(evt.getDrops().isEmpty(), "A PvP death must not drop anything");
+    }
+
+    @Test
     void aPlayerKilledByTheirOwnHandIsNotAPvpDeath() {
         // Own TNT, own projectile or a '/kill' on oneself reports the dead player as
         // their own killer. Treating that as PvP would let anybody keep their

@@ -48,11 +48,18 @@ public class PlayerDeathListener implements Listener {
 
         // 1) Early exits
         if (keepInventoryAlreadyOn(event)) return;
-        if (disallowedEndGeneration(event)) return;
 
         final Player player = event.getEntity().getPlayer();
-        if (playerOrWorldDisallowsGeneration(player)) return;
+        if (player == null) return;
+
+        // A PvP death decides on its own what happens to the items, so it is
+        // answered before the checks below. Those only say where a grave may be
+        // generated : dying in the end, in an excluded world or in creative turns
+        // the generation off, it does not mean the items have to drop.
         if (pvpKeepInventoryCase(event, player)) return;
+
+        if (disallowedEndGeneration(event)) return;
+        if (playerOrWorldDisallowsGeneration(player)) return;
 
         // 1b) Vanilla drop mode : no chest at all, only locked drops on the ground
         if (LockedDropService.isVanillaDropModeEnabled()) {
