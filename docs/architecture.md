@@ -129,7 +129,7 @@ The handshake:
 2. **Respawn and quit** flush the player data and settle what was waiting on it.
 3. **Join** compares the sequence the player file actually carries with the one recorded. A record above that number
    was created by a death the server never saved: its content is a duplicate of what the player owns again, and it is
-   removed (or kept, with `integrity.on-rollback: keep`).
+   removed. There is no option to keep it: two copies of the same items on the server made a crash a way to duplicate on purpose.
 
 `ChestIntegrityService.allocateSequence()` is the single allocator for both paths, because both stamp the same player
 data. A drop sleeping in an unloaded chunk cannot be judged at login, so the verdict is cached per owner and applied

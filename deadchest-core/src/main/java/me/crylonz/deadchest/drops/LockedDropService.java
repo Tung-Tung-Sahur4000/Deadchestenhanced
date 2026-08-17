@@ -562,15 +562,6 @@ public final class LockedDropService {
             return;
         }
 
-        if (!ChestIntegrityService.shouldVoidRollbackDuplicates()) {
-            generateLog("Reserved drop of [" + (player == null ? drop.getOwnerId() : player.getName())
-                    + "] comes from a death the server never saved (server crash), but '"
-                    + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep : drop kept.");
-            drop.setIntegrity(drop.getIntegritySequence(), true);
-            writeConfirmed(drop);
-            return;
-        }
-
         removeRollbackDuplicate(drop, player);
     }
 

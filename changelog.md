@@ -31,6 +31,11 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- A deadchest or a reserved drop proven to be a crash duplicate is now always destroyed, and `integrity.on-rollback` is
+  retired. Its `keep` value left the duplicate on the server next to the copy the player had just got back, so a crash, or
+  a crash caused on purpose, was a way to end up with two sets of the same items. A config still carrying the option logs a
+  warning once at startup and changes nothing. The copy destroyed is always the server side one, the chest or the reserved
+  drop: what a player holds is never touched
 - Added `vanilla-drop.rescue-void-deaths`, default `true`. A death below the world had its items pulled back up to the
   surface and reserved, with no way to turn it off, while vanilla Minecraft destroys everything a player carried when they
   fall out of the world. `false` leaves those drops to the void, so a void death costs the inventory the way the game

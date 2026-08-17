@@ -279,6 +279,26 @@ public class DeadChestLoader {
         config.register(ConfigKey.INTEGRITY_PROTECTION_ENABLED.toString(), true);
         config.register(ConfigKey.INTEGRITY_FLUSH_PLAYER_DATA.toString(), true);
         config.register(ConfigKey.INTEGRITY_ON_ROLLBACK.toString(), "void");
+        warnAboutRetiredRollbackKeep();
+    }
+
+    /**
+     * 'integrity.on-rollback: keep' left the duplicate on the server next to the
+     * copy the player already held, which made a crash a way to duplicate items on
+     * purpose. A proven duplicate is always destroyed now, so a config still
+     * asking to keep it says so once instead of changing behavior in silence.
+     */
+    private void warnAboutRetiredRollbackKeep() {
+        if (config == null || log == null) {
+            return;
+        }
+
+        if ("keep".equalsIgnoreCase(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK))) {
+            log.warning("[DeadChest] '" + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep, which is no longer "
+                    + "honored : a chest or a reserved drop proven to be a crash duplicate is always destroyed, "
+                    + "because keeping it left two copies of the same items on the server. The option can be "
+                    + "removed from config.yml.");
+        }
     }
 
     private void initializeConfig() {

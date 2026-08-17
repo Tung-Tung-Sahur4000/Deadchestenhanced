@@ -71,11 +71,18 @@ public final class ChestIntegrityService {
     }
 
     /**
-     * @return {@code true} when a chest proven to be a rollback duplicate must
-     * be destroyed instead of being handed to the player a second time
+     * A duplicate proven by the sequence stamp holds items the player already
+     * carries again, so it is always destroyed. Keeping it was an option once,
+     * which left two copies of the same items on the server and turned a crash
+     * into a way to duplicate on purpose.
+     * <p>
+     * The copy destroyed is always the one on the server side, the chest or the
+     * reserved drop. What the player holds is never touched.
+     *
+     * @return {@code true}, always
      */
     public static boolean shouldVoidRollbackDuplicates() {
-        return config == null || !"keep".equalsIgnoreCase(config.getString(ConfigKey.INTEGRITY_ON_ROLLBACK));
+        return true;
     }
 
     /**
@@ -309,15 +316,6 @@ public final class ChestIntegrityService {
      */
     private static void voidRolledBackDeath(@Nonnull final ChestData chest, final Player player) {
         final String description = "[" + chest.getPlayerName() + "] at " + describe(chest);
-
-        if (!shouldVoidRollbackDuplicates()) {
-            chest.setIntegrityState(ChestIntegrityState.CONFIRMED);
-            ChestDataRepository.saveIntegrityAsync(chest);
-            warn("Deadchest " + description + " was created by a death the server never saved (server crash). "
-                    + "Its content is a duplicate of the items " + chest.getPlayerName() + " still owns, "
-                    + "but '" + ConfigKey.INTEGRITY_ON_ROLLBACK + "' is set to keep : chest kept.");
-            return;
-        }
 
         warn("Deadchest " + description + " removed : the death was never saved on the player side (server crash), "
                 + "its content is already back in the inventory of " + chest.getPlayerName() + ".");

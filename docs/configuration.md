@@ -79,7 +79,7 @@ What still works in this mode:
   retargeted, and removed once every drop has been picked up or expired, exactly like it is for a chest.
 - `integrity.crash-protection` covers the reserved drops too: the death is stamped on the player data before the items leave
   the inventory, and a server killed without a clean shutdown can no longer leave the items both in the inventory and on the
-  ground. `integrity.flush-player-data` and `integrity.on-rollback` apply the same way as for chests.
+  ground. `integrity.flush-player-data` applies the same way as for chests, and a proven duplicate is always destroyed.
 - The vanilla recovery compass keeps pointing at the death location, the plugin never cancels the death itself.
 - `filters.ignored-items` entries are left to vanilla or to another plugin, they are never locked.
 - `pvp.keep-inventory-on-player-kill` is answered before this mode, so a player kill keeps the inventory and reserves
@@ -187,7 +187,6 @@ overwriting the first.
 |---------------------------------|---------|---------|-------------------------------------------------------------------------------------------------|
 | `integrity.crash-protection`    | boolean | `true`  | Detect and cancel the item duplication caused by a server killed without a clean shutdown.       |
 | `integrity.flush-player-data`   | boolean | `true`  | Write the player data to disk as soon as items move between a player and a chest.                |
-| `integrity.on-rollback`         | string  | `void`  | What to do with a chest proven to be a crash duplicate: `void` (delete) or `keep` (log only).    |
 
 The plugin database is written the moment a player dies, while the vanilla
 `playerdata/<uuid>.dat` file is only written on autosave, on quit or on a clean
@@ -201,7 +200,7 @@ stamped on both sides and only completed once the player data reached the disk.
 A transfer left half done by a crash is settled when the player reconnects:
 
 - the death never reached the player file: the player already owns the items, the
-  chest is a duplicate and is removed (or kept, with `on-rollback: keep`);
+  chest is a duplicate and is always removed;
 - the hand over never reached the player file: the player never kept the items,
   the chest comes back with its content.
 

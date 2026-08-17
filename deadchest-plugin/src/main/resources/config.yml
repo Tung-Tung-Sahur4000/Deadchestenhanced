@@ -209,11 +209,13 @@ integrity:
   # false = only detect duplicates, without forcing a save
   flush-player-data: true
 
-  # What to do with a deadchest proven to be a crash duplicate, meaning the
-  # player reconnected with the items the chest holds still in the inventory.
-  # void = delete the duplicated chest (recommended)
-  # keep = keep the chest and only log a warning, for manual review
-  on-rollback: void
+  # A deadchest or a reserved drop proven to be a crash duplicate is always
+  # destroyed. Proven means the player reconnected with those exact items still
+  # in their inventory, so the copy on the server is the extra one and deleting
+  # it costs them nothing. The copy destroyed is always the one on the server
+  # side: what a player holds is never touched.
+  # There is no option to keep it. Keeping it left two copies of the same items
+  # on the server, which turned a crash into a way to duplicate on purpose.
 
 respawn:
   # Give a compass pointing at the latest DeadChest when a player respawns.

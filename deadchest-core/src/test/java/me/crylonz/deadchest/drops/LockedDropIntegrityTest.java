@@ -144,7 +144,9 @@ class LockedDropIntegrityTest {
     }
 
     @Test
-    void keepModeLeavesTheDuplicateOnTheGround() {
+    void theDuplicateIsRemovedEvenWhenTheRetiredKeepOptionIsStillInTheConfig() {
+        // A drop left on the ground next to the copy the player got back was a
+        // second set of the same items, so the option asking for it is gone.
         when(config.getString(INTEGRITY_ON_ROLLBACK)).thenReturn("keep");
         die();
         Item drop = onlyDrop();
@@ -152,8 +154,8 @@ class LockedDropIntegrityTest {
         PlayerDataStamp.writeSequence(player, 0L);
         ChestIntegrityService.reconcile(player);
 
-        assertTrue(drop.isValid(), "'keep' asks for the duplicate to stay");
-        assertEquals(1, LockedDropService.getTrackedDropAmount());
+        assertFalse(drop.isValid(), "The duplicate is removed whatever the retired option says");
+        assertEquals(0, LockedDropService.getTrackedDropAmount());
     }
 
     @Test
