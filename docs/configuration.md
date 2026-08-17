@@ -64,6 +64,7 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 | Key                                  | Type    | Default | Description                                                                                                    |
 |--------------------------------------|---------|---------|----------------------------------------------------------------------------------------------------------------|
 | `vanilla-drop.enabled`               | boolean | `false` | Disable DeadChest generation and keep vanilla death drops instead.                                              |
+| `vanilla-drop.worlds`                | list    | `[]`    | Where the mode applies. Empty = everywhere. An entry is a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`). A world left out falls back to the normal DeadChest behavior. |
 | `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too. `false` leaves the drops open to everybody, mobs and hoppers included. |
 | `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
 | `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |
@@ -80,7 +81,26 @@ What still works in this mode:
   ground. `integrity.flush-player-data` and `integrity.on-rollback` apply the same way as for chests.
 - The vanilla recovery compass keeps pointing at the death location, the plugin never cancels the death itself.
 - `filters.ignored-items` entries are left to vanilla or to another plugin, they are never locked.
-- Early exits still apply first: `chest.*` limits are irrelevant here, but excluded worlds, creative mode, The End and `pvp.keep-inventory-on-player-kill` keep their usual behavior.
+- `pvp.keep-inventory-on-player-kill` is answered before this mode, so a player kill keeps the inventory and reserves
+  nothing.
+
+What this mode deliberately leaves alone:
+
+The point of the mode is that the items behave the way the game makes them behave. Ownership and the lifetime are the only
+deviations, so the options DeadChest uses to rework what a player loses are **not** applied here, by design:
+
+| Key                                  | In this mode                                                                                  |
+|--------------------------------------|-----------------------------------------------------------------------------------------------|
+| `filters.excluded-items`             | Not applied. The items drop, vanilla decides. In chest mode they are destroyed on death.        |
+| `durability.loss-on-death-percent`   | Not applied. A death costs no extra durability, exactly like vanilla.                           |
+| `xp.store-on-death`, `xp.store-percentage` | Not applied. Experience drops the way the game drops it.                                  |
+| `permissions.require-generate`       | Not applied. There is no grave to authorize, and vanilla does not ask for a permission to drop. |
+| `chest.max-per-player`, `chest.replace-oldest` | Not applied. There is no chest to count.                                            |
+
+Set them for the chest mode; a world that falls back to a grave through `vanilla-drop.worlds` gets all of them as usual.
+
+- `filters.excluded-worlds`, `generation.allow-in-end-worlds` and `generation.allow-in-creative` say where a **grave** may
+  be placed and have no effect on this mode. Use `vanilla-drop.worlds` to scope it.
 
 Notes:
 

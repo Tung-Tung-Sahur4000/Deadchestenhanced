@@ -101,6 +101,13 @@ chest:
       other-players: true
 
 vanilla-drop:
+  # The point of this mode is that the items behave the way the game makes them
+  # behave. Who may pick a drop up and how long it lasts are the only deviations,
+  # so the options that rework what a player loses on death are NOT applied here:
+  # 'filters.excluded-items', 'durability.loss-on-death-percent', 'xp.store-*'
+  # and 'permissions.require-generate' belong to the chest mode. A world that
+  # falls back to a grave through 'worlds' below gets all of them as usual.
+  #
   # Disables DeadChest generation and keeps vanilla death drops instead.
   # true  = no chest, no hologram: items are spread on the ground like vanilla,
   #         but they stay reserved for the dead player and are protected from despawn.
