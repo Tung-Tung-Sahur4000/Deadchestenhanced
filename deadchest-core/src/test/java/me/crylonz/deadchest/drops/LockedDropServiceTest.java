@@ -58,6 +58,7 @@ class LockedDropServiceTest {
         when(cfg.getBoolean(VANILLA_DROP_ENABLED)).thenReturn(true);
         when(cfg.getBoolean(VANILLA_DROP_OWNER_ONLY_PICKUP)).thenReturn(true);
         when(cfg.getBoolean(VANILLA_DROP_PROTECT_FROM_DESPAWN)).thenReturn(true);
+        when(cfg.getBoolean(VANILLA_DROP_RESCUE_VOID_DEATHS)).thenReturn(true);
         when(cfg.getBoolean(VANILLA_DROP_INVULNERABLE)).thenReturn(false);
         when(cfg.getBoolean(VANILLA_DROP_GLOW)).thenReturn(false);
         when(cfg.getBoolean(DISPLAY_POSITION_ON_DEATH)).thenReturn(false);
@@ -102,6 +103,46 @@ class LockedDropServiceTest {
             assertEquals(player.getUniqueId(), LockedDropService.getOwner(item));
             assertTrue(LockedDropService.isLocked(item));
         }
+    }
+
+    @Test
+    void aVoidDeathIsRescuedByDefault() {
+        // Historic behavior : the items are pulled back to the surface.
+        when(cfg.getBoolean(VANILLA_DROP_RESCUE_VOID_DEATHS)).thenReturn(true);
+        player.teleport(new Location(world, 0, world.getMinHeight() - 10, 0));
+
+        PlayerDeathEvent event = deathEvent(new ItemStack(Material.DIAMOND, 1));
+        LockedDropService.handlePlayerDeath(event, player);
+
+        assertEquals(1, LockedDropService.getTrackedDropAmount(), "The drop is rescued and reserved");
+        Item rescued = world.getEntitiesByClass(Item.class).iterator().next();
+        assertTrue(rescued.getLocation().getY() >= world.getMinHeight(), "The drop is back inside the world");
+    }
+
+    @Test
+    void aVoidDeathIsLeftToTheVoidWhenTheRescueIsOff() {
+        // Vanilla Minecraft destroys everything you carried when you fall out of the
+        // world, so nothing is taken over and nothing is reserved.
+        when(cfg.getBoolean(VANILLA_DROP_RESCUE_VOID_DEATHS)).thenReturn(false);
+        player.teleport(new Location(world, 0, world.getMinHeight() - 10, 0));
+
+        PlayerDeathEvent event = deathEvent(new ItemStack(Material.DIAMOND, 1));
+        LockedDropService.handlePlayerDeath(event, player);
+
+        assertEquals(0, LockedDropService.getTrackedDropAmount(), "Nothing is reserved on a void death");
+        assertTrue(world.getEntitiesByClass(Item.class).isEmpty(), "No drop is spawned back on the ground");
+        assertEquals(1, event.getDrops().size(), "The stack is left to vanilla, which lets the void take it");
+    }
+
+    @Test
+    void aNormalDeathIsUnaffectedByTheVoidRescueBeingOff() {
+        when(cfg.getBoolean(VANILLA_DROP_RESCUE_VOID_DEATHS)).thenReturn(false);
+        player.teleport(new Location(world, 0, 65, 0));
+
+        PlayerDeathEvent event = deathEvent(new ItemStack(Material.DIAMOND, 1));
+        LockedDropService.handlePlayerDeath(event, player);
+
+        assertEquals(1, LockedDropService.getTrackedDropAmount(), "A death inside the world still reserves its drops");
     }
 
     @Test

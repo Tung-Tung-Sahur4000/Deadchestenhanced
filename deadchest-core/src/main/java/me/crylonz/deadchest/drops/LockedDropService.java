@@ -97,6 +97,23 @@ public final class LockedDropService {
     }
 
     /**
+     * @return {@code true} when the items of a death below the world are brought
+     * back to the surface instead of being destroyed the way vanilla destroys them
+     */
+    public static boolean isVoidRescueEnabled() {
+        return isEnabled(ConfigKey.VANILLA_DROP_RESCUE_VOID_DEATHS);
+    }
+
+    /**
+     * @param world    world of the death
+     * @param location death position
+     * @return {@code true} when the player died below the bottom of the world
+     */
+    static boolean isVoidDeath(World world, Location location) {
+        return world != null && location != null && location.getY() < GraveBlocks.minHeight(world);
+    }
+
+    /**
      * @return lifetime of a reserved drop in seconds, 0 when it never expires
      */
     public static int getDespawnSeconds() {
@@ -119,6 +136,16 @@ public final class LockedDropService {
 
         final World world = player.getWorld();
         if (world == null) {
+            return;
+        }
+
+        // A death below the world destroys the items in vanilla Minecraft. The
+        // drops are left untouched so that keeps happening, instead of being
+        // pulled back up to the surface.
+        if (isVoidDeath(world, player.getLocation()) && !isVoidRescueEnabled()) {
+            generateLog("Player [" + player.getName() + "] died below the world and "
+                    + ConfigKey.VANILLA_DROP_RESCUE_VOID_DEATHS
+                    + " is false : the items are left to the void, nothing is reserved");
             return;
         }
 

@@ -261,6 +261,7 @@ public class DeadChestLoader {
         config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_DEATH.toString(), false);
         config.register(ConfigKey.KEEP_INVENTORY_ON_PVP_WORLDS.toString(), Collections.emptyList());
         config.register(ConfigKey.VANILLA_DROP_WORLDS.toString(), Collections.emptyList());
+        config.register(ConfigKey.VANILLA_DROP_RESCUE_VOID_DEATHS.toString(), true);
         config.register(ConfigKey.LOCALIZATION_LANGUAGE.toString(), "en");
         config.register(ConfigKey.REPLACE_OLDEST.toString(), false);
         config.register(ConfigKey.PLACEMENT_SAFE_LOCATION.toString(), true);

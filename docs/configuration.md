@@ -65,6 +65,7 @@ Items are spread on the ground exactly like vanilla, but they stay reserved for 
 |--------------------------------------|---------|---------|----------------------------------------------------------------------------------------------------------------|
 | `vanilla-drop.enabled`               | boolean | `false` | Disable DeadChest generation and keep vanilla death drops instead.                                              |
 | `vanilla-drop.worlds`                | list    | `[]`    | Where the mode applies. Empty = everywhere. An entry is a world name or a whole dimension (`OVERWORLD`, `NETHER`, `END`). A world left out falls back to the normal DeadChest behavior. |
+| `vanilla-drop.rescue-void-deaths`    | boolean | `true`  | Bring the items of a death below the world back to the surface. `false` leaves them to the void, which destroys them exactly like vanilla Minecraft does. |
 | `vanilla-drop.owner-only-pickup`     | boolean | `true`  | Only the dead player can pick the drops up. Mobs and hoppers are blocked too. `false` leaves the drops open to everybody, mobs and hoppers included. |
 | `vanilla-drop.despawn-seconds`       | integer | `300`   | Lifetime of the reserved drops, counted in real time. `0` = never disappear.                                    |
 | `vanilla-drop.protect-from-despawn`  | boolean | `true`  | Cancel the vanilla despawn timer so only `despawn-seconds` applies. `false` lets the vanilla timer remove the drops, whichever of the two comes first. |

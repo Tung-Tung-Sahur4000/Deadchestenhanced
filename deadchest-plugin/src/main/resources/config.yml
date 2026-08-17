@@ -131,6 +131,13 @@ vanilla-drop:
   # have no effect here.
   worlds: []
 
+  # What happens to the items when a player dies below the world (the void).
+  # true  = the items are brought back to the surface and reserved as usual
+  # false = the items are left to the void and destroyed, like real Minecraft
+  # Vanilla Minecraft destroys everything you were carrying when you fall out of
+  # the world. 'false' keeps that, so a void death still costs the inventory.
+  rescue-void-deaths: true
+
   # Restrict the drops to the player who died.
   # true  = only the owner can pick them up, mobs and hoppers are blocked too
   # false = anyone can pick them up (drops are only protected from despawn)

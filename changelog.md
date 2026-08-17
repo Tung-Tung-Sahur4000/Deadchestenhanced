@@ -31,6 +31,10 @@
 - Fixed `pvp.keep-inventory-on-player-kill` treating a self inflicted death as a player kill. A player killed by their own
   TNT, their own projectile or a `/kill` on themselves is reported by the server as their own killer, so any player could
   keep their inventory on demand while the option was on. Only a death caused by somebody else counts as PvP now
+- Added `vanilla-drop.rescue-void-deaths`, default `true`. A death below the world had its items pulled back up to the
+  surface and reserved, with no way to turn it off, while vanilla Minecraft destroys everything a player carried when they
+  fall out of the world. `false` leaves those drops to the void, so a void death costs the inventory the way the game
+  means it to
 - Added `vanilla-drop.worlds` and separated the vanilla drop mode from the chest generation options. The mode used to be
   turned off by `filters.excluded-worlds`, `generation.allow-in-end-worlds` and `generation.allow-in-creative`, which only
   say where a grave may be placed: a death in such a world dropped the items on the ground unprotected, with no reservation
